@@ -124,3 +124,22 @@ def test_concurrent_downloads_use_separate_temp_files(tmp_path):
     with a._temp_clip() as pa, b._temp_clip() as pb:
         assert pa != pb
     assert not pa.exists() and not pb.exists()
+
+
+def test_lexicon_does_not_pick_number_prefixed_signs():
+    from medbridge.text2sign import build_lexicon
+
+    assert build_lexicon(["8HOUR", "HOUR", "2WEEKS"])["hour"] == "HOUR"
+
+
+def test_fill_gaps_interpolates_short_tracking_dropouts_only():
+    from medbridge.text2sign import fill_gaps
+
+    seq = np.full((30, 178, 3), np.nan, np.float32)
+    seq[:, 157, 0] = np.arange(30, dtype=np.float32)
+    seq[10:14, 157] = np.nan          # 4-frame dropout inside the sign -> filled
+    seq[20:30, 157] = np.nan          # hand gone at the end (rest) -> stays missing
+    out = fill_gaps(seq, max_gap=8)
+    assert out[12, 157, 0] == pytest.approx(12)
+    assert np.isnan(out[25, 157, 0])
+    assert np.isnan(out[5, 0, 0])     # points never present stay missing

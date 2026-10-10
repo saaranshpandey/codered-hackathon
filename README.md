@@ -4,7 +4,8 @@ Two-way, real-time communication between a Deaf patient who signs American Sign 
 speaking clinician in an emergency room. Everything runs live on one MacBook. Nothing is
 pre-recorded, and the AI output is never faked.
 
-- **Doctor → patient:** the doctor speaks, and the patient reads large live captions. The doctor can correct any caption.
+- **Doctor → patient:** the doctor speaks. The patient reads live captions and watches a 3D figure sign the words, word by word,
+  using Deaf signers' recorded motion. The doctor can correct any caption.
 - **Patient → doctor:** the patient signs. The app translates the signing into English candidates, and the patient
   confirms, corrects or rejects them before anything is shown to the doctor as "patient said".
 
@@ -69,6 +70,8 @@ Notes:
    ├─ precise ─► MediaPipe Holistic ─► sign segmenter ─► ST-GCN ─► top-5 signs ─► translate.py
    └─► landmarks (WebSocket, patient view only) + MJPEG preview
  Mic ─► asr.py: Silero VAD ─► utterance segmenter ─► mlx-whisper ─► interim / final captions
+   └─► final caption ─► text2sign.py: word → ASL Citizen sign (Deaf signer motion, local cache)
+                         or sign.mt (missing words only) ─► joined 3D motion ─► patient's signing figure
  hub.py: session state, role-checked actions ─► WebSocket snapshots ─► /patient and /doctor
 ```
 
@@ -84,6 +87,7 @@ Requirements: Python 3.11, Node 20+, Homebrew `ffmpeg` (only for `fetch_eval_cli
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python scripts/fetch_models.py           # ~3 GB: Uni-Sign, ASL Citizen weights + gloss list, whisper
+python scripts/build_sign_lexicon.py     # one-time ~10 min: signing motion for common doctor words
 (cd web && npm install && npm run build)
 cp .env.example .env                      # then set CAMERA_INDEX / MIC_NAME
 python scripts/check_devices.py           # finds the Logitech camera + mic, checks permissions
@@ -167,7 +171,10 @@ METRICS_LOG=1 python -m medbridge.server # logs timings/scores/labels (no text/a
 
 - Audio and video are processed in memory and never written to disk. No recordings are made.
 - Speech recognition runs locally.
-- The only network call is the optional Claude rephrasing of precise-mode sign labels.
+- Network calls:
+  - optional Claude rephrasing of precise-mode sign labels;
+  - for the doctor-to-patient signing, any **word that is missing from the local sign dictionary** is sent to the
+    public sign.mt service. Set `SIGN_MT=0` to keep everything on the Mac; missing words then show as text chips.
 - The conversation lives in memory until **End session**.
 - There is no diagnosis or clinical decision support.
 

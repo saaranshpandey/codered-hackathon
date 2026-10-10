@@ -55,9 +55,10 @@ def _key(gloss):
 
 
 def build_lexicon(glosses):
-    """English key -> gloss, preferring plain (not fingerspelled) and lowest-numbered variants."""
+    """English key -> gloss, preferring plain variants: not fingerspelled (W.H.A.T), not number-prefixed
+    (8HOUR is "eight hours"), then the lowest-numbered variant (DOCTOR1)."""
     lex = {}
-    for g in sorted(glosses, key=lambda g: ("." in g, g)):
+    for g in sorted(glosses, key=lambda g: ("." in g, g[:1].isdigit(), g)):
         lex.setdefault(_key(g), g)
     return lex
 
@@ -129,6 +130,20 @@ def resample(seq, fps_in, fps_out=30):
     flat = seq.reshape(n, -1)
     out = np.stack([np.interp(t_out, t_in, flat[:, j]) for j in range(flat.shape[1])], axis=1)
     return out.reshape(len(t_out), *seq.shape[1:]).astype(np.float32)
+
+
+def fill_gaps(seq, max_gap=8):
+    """Linearly fill short runs of missing frames per point (tracking dropouts mid-sign), so hands
+    don't flicker out; longer gaps and leading/trailing absences stay missing."""
+    out = seq.copy()
+    missing = np.isnan(seq[..., 0])
+    for p in np.where(missing.any(axis=0) & ~missing.all(axis=0))[0]:
+        idx = np.where(~missing[:, p])[0]
+        for a, b in zip(idx[:-1], idx[1:]):
+            if 1 < b - a <= max_gap + 1:
+                t = (np.arange(a + 1, b) - a) / (b - a)
+                out[a + 1:b, p] = seq[a, p] + (seq[b, p] - seq[a, p]) * t[:, None]
+    return out
 
 
 def trim_to_hands(seq, pad=3):
@@ -288,5 +303,5 @@ class Builder:
                 seq, source = (resample(got[0], got[1], 30), "signmt") if got else (None, "none")
             elif seq is None:
                 source = "none"
-            segments.append((word, gloss, source, normalize(seq) if seq is not None else None))
+            segments.append((word, gloss, source, fill_gaps(normalize(seq)) if seq is not None else None))
         return assemble(segments)

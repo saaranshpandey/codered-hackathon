@@ -13,5 +13,10 @@ export type State = {
   natural: { seg_id: number; candidates: Candidate[]; latency_ms: number | null; selected: number; low_confidence: boolean } | null
   precise: PreciseItem[]
   draft: { text: string; source: string; edited: boolean }
+  signing: Signing | null
+}
+export type Signing = {
+  caption_id: number; status: 'building' | 'ready' | 'empty' | 'error'; frames: number; fps: number
+  words: { word: string; gloss: string | null; source: 'aslc' | 'signmt' | 'none'; start: number; end: number }[] | null
 }
 export type Landmarks = { mode: string; hands: number[][][]; body: number[][]; at: number }

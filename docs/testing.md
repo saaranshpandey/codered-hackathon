@@ -69,6 +69,13 @@ Check:
 
 Record the number of lines with a wrong word, and any drug or medical term that was misheard.
 
+**Signing figure.** After each final caption, the figure above the captions signs the doctor's words.
+- The first time a new word is used it takes a few seconds ("Preparing signs…"). After that it is cached.
+- Each word chip shows where its motion came from: green = Deaf signer (ASL Citizen), amber = sign.mt, hollow = no sign
+  (text only).
+- Use **Replay** and **0.6×** to watch again slowly.
+- This is word-by-word signing, not ASL grammar. The captions are the reference.
+
 ## 2. Precise mode: one sign at a time (start here, most reliable)
 
 On the patient view, choose **One sign at a time**. For each row:

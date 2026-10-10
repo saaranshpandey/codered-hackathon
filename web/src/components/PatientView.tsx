@@ -4,6 +4,7 @@ import { wordDiff } from '../lib/text'
 import type { State } from '../lib/types'
 import { useMedbridge } from '../lib/useMedbridge'
 import { CameraPanel } from './CameraPanel'
+import { SigningStage } from './SigningStage'
 import { Disclaimer, Icon, StatusPill, Waveform, Wordmark, sourceLabel } from './ui'
 
 type Send = (msg: Record<string, unknown>) => void
@@ -23,8 +24,13 @@ export function PatientView() {
       </header>
       {state ? (
         <main className="grid min-h-0 flex-1 grid-cols-1 gap-6 px-5 py-5 lg:grid-cols-12 lg:gap-10 lg:px-10 lg:py-7">
-          <section className="flex max-h-[40vh] min-h-[220px] flex-col lg:col-span-7 lg:max-h-none lg:min-h-0">
-            <Captions state={state} />
+          <section className="flex flex-col gap-5 lg:col-span-7 lg:min-h-0">
+            <div className="flex h-[42vh] min-h-[260px] lg:h-auto lg:min-h-0 lg:flex-[1.15]">
+              <SigningStage signing={state.signing} />
+            </div>
+            <div className="flex max-h-[34vh] min-h-[180px] flex-col lg:max-h-none lg:min-h-0 lg:flex-1">
+              <Captions state={state} />
+            </div>
           </section>
           <section className="flex min-h-0 flex-col gap-5 pb-2 lg:col-span-5 lg:overflow-y-auto">
             <CameraPanel landmarks={landmarks} signState={state.sign.state} mode={state.sign.mode} fps={fps}
@@ -70,7 +76,7 @@ function Captions({ state }: { state: State }) {
                 animate={{ opacity: latest ? 1 : Math.max(0.22, 0.6 - age * 0.13), y: 0, filter: 'blur(0px)' }}
                 transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
                 {c.original && <span className="eyebrow mb-2 inline-block rounded-full bg-amber/15 px-2.5 py-1 text-amber">Corrected by doctor</span>}
-                <p className={`font-bold leading-[1.12] tracking-[-0.01em] ${latest ? 'text-[clamp(40px,3.6vw,60px)]' : 'text-[clamp(26px,2.2vw,34px)]'}`}>
+                <p className={`font-bold leading-[1.12] tracking-[-0.01em] ${latest ? 'text-[clamp(30px,2.6vw,44px)]' : 'text-[clamp(20px,1.6vw,26px)]'}`}>
                   {wordDiff(c.original, c.text).map((w, k) => (
                     <span key={k} className={w.changed ? 'text-amber underline decoration-amber/60 decoration-2 underline-offset-8' : ''}>{w.word} </span>
                   ))}
@@ -80,7 +86,7 @@ function Captions({ state }: { state: State }) {
           })}
           {state.interim && (
             <motion.p key={`interim-${state.interim.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="shimmer text-[clamp(40px,3.6vw,60px)] font-bold leading-[1.12]">
+              className="shimmer text-[clamp(30px,2.6vw,44px)] font-bold leading-[1.12]">
               {state.interim.text}
             </motion.p>
           )}
