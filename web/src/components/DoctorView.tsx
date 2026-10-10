@@ -151,7 +151,8 @@ function LiveLane({ state }: { state: State }) {
             <ul className="flex flex-col gap-2">
               {n.candidates.map((c, i) => (
                 <li key={i} className={`flex items-baseline justify-between gap-3 ${n.selected === i ? 'font-bold' : 'text-graphite/55'}`}>
-                  <span className="text-[16px] leading-snug">{n.selected === i ? '▸ ' : ''}{c.text}</span>
+                  <span className="text-[16px] leading-snug">{n.selected === i ? '▸ ' : ''}{c.text}
+                    <span className="eyebrow ml-2 text-graphite/40">{c.kind === 'free' ? 'free' : 'phrase'}</span></span>
                   <span className="font-mono text-xs text-graphite/45">{Math.round(c.rel_score * 100)}%</span>
                 </li>
               ))}

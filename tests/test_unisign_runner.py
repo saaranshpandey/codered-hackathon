@@ -55,3 +55,29 @@ def test_largest_box_keeps_only_the_biggest_person_box():
     boxes = np.array([[0, 0, 10, 10], [0, 0, 100, 50], [5, 5, 20, 20]], dtype=float)
     assert largest_box(boxes).tolist() == [[0, 0, 100, 50]]
     assert len(largest_box(np.zeros((0, 4)))) == 0
+
+
+def test_top_phrases_returns_k_best_with_share_of_whole_bank():
+    from medbridge.unisign_runner import top_phrases
+
+    ranked = [("A.", -0.2), ("B.", -0.9), ("C.", -1.5), ("D.", -3.0)]
+    out = top_phrases(ranked, k=3)
+    assert [p["text"] for p in out] == ["A.", "B.", "C."]
+    assert out[0]["rel_score"] > out[1]["rel_score"] > out[2]["rel_score"]
+    assert sum(p["rel_score"] for p in out) < 1.0  # share of the whole bank, not just the top 3
+
+
+CKPT = __import__("pathlib").Path(__file__).resolve().parents[1] / "data/models/openasl_pose_only_slt.pth"
+POSES = sorted((CKPT.parents[1] / "eval/poses/lightweight_mps").glob("*.npz"))
+
+
+@pytest.mark.skipif(not CKPT.exists() or not POSES, reason="checkpoint or cached eval poses missing")
+def test_translate_returns_top3_bank_phrases_and_free_translation():
+    from medbridge.unisign_runner import NaturalSigner
+
+    bank = ["I need water.", "My stomach hurts.", "I feel dizzy.", "Yes.", "No."]
+    signer = NaturalSigner(CKPT, device="cpu", pose_device="cpu", phrases=bank)
+    z = np.load(POSES[0])
+    out = signer.translate(list(z["k"]), list(z["s"]))
+    assert len(out["candidates"]) == 3
+    assert len(out["phrases"]) == 3 and all(p["text"] in bank for p in out["phrases"])

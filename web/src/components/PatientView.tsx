@@ -119,12 +119,12 @@ function NaturalReply({ state, send }: { state: State; send: Send }) {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <span className="eyebrow text-bone/45">Choose what you meant</span>
+        <span className="eyebrow text-bone/45">Closest ER phrases — choose what you meant</span>
         {n.latency_ms !== null && <span className="eyebrow text-bone/35">translated in {n.latency_ms} ms</span>}
       </div>
       {n.low_confidence && (
         <p className="mb-3 rounded-2xl bg-amber/12 px-4 py-3 text-[15px] text-amber">
-          Low confidence. Check carefully — retry, or switch to one sign at a time.
+          Low confidence. None of these may be right — retry, or switch to one sign at a time.
         </p>
       )}
       <div className="flex flex-col gap-2.5">
@@ -135,7 +135,10 @@ function NaturalReply({ state, send }: { state: State; send: Send }) {
             <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border ${n.selected === i ? 'border-mint bg-mint text-ink' : 'border-bone/25'}`}>
               {n.selected === i && <Icon name="check" size={14} />}
             </span>
-            <span className="flex-1 text-[19px] leading-snug">{c.text}</span>
+            <span className="flex-1">
+              <span className="eyebrow block text-bone/40">{c.kind === 'free' ? 'Free translation' : 'ER phrase'}</span>
+              <span className="text-[19px] leading-snug">{c.text}</span>
+            </span>
             <span className="flex w-16 flex-col items-end gap-1">
               <span className="font-mono text-xs text-bone/50">{Math.round(c.rel_score * 100)}%</span>
               <span className="h-1 w-full overflow-hidden rounded-full bg-bone/10">

@@ -164,3 +164,35 @@ def test_async_interim_text_matches_literal_translator():
     h.on_sign_prediction(1, [{"label": "me / I", "glosses": ["ME"], "p": 0.9}])
     assert h.state["draft"]["text"] == "Me."
     gate.set()
+
+
+def with_phrases(seg_id, phrases, free):
+    return {"seg_id": seg_id, "latency_ms": 700,
+            "phrases": [{"text": t, "score": s, "rel_score": 0.3} for t, s in phrases],
+            "candidates": [{"text": t, "score": s, "rel_score": 0.4} for t, s in free]}
+
+
+def test_bank_phrases_come_first_then_the_free_translation(hub):
+    hub.on_sentence(with_phrases(1, [("My stomach hurts.", -0.8), ("I feel sick.", -1.1), ("I need water.", -1.4)],
+                                 [("He was heartbroken.", -0.6), ("He was hurt.", -0.7), ("x", -0.9)]))
+    n = hub.state["natural"]
+    assert [c["kind"] for c in n["candidates"]] == ["phrase", "phrase", "phrase", "free"]
+    assert n["candidates"][3]["text"] == "He was heartbroken."
+    assert hub.state["draft"] == {"text": "My stomach hurts.", "source": "natural-phrase", "edited": False}
+
+
+def test_picking_the_free_translation_marks_source_natural(hub):
+    hub.on_sentence(with_phrases(1, [("A.", -0.8), ("B.", -1.1), ("C.", -1.4)], [("Free.", -0.6)]))
+    assert hub.state["draft"]["source"] == "natural-phrase"  # a bank phrase is preselected
+    hub.apply({"type": "candidate.pick", "index": 3}, role="patient")
+    assert hub.state["draft"]["source"] == "natural" and hub.state["draft"]["text"] == "Free."
+
+
+def test_low_confidence_uses_top_phrase_score_when_phrases_present():
+    from medbridge.hub import Hub
+
+    h = Hub(broadcast=lambda m: None, translate=literal, natural_min_score=-0.65, phrase_min_score=-1.5)
+    h.on_sentence(with_phrases(1, [("A.", -1.2), ("B.", -1.6), ("C.", -1.9)], [("Free.", -2.0)]))
+    assert h.state["natural"]["low_confidence"] is False
+    h.on_sentence(with_phrases(2, [("A.", -1.7), ("B.", -1.8), ("C.", -1.9)], [("Free.", -0.1)]))
+    assert h.state["natural"]["low_confidence"] is True

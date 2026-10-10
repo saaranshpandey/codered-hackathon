@@ -17,8 +17,8 @@ pre-recorded, and the AI output is never faked.
 |---|---|---|
 | Model | [Uni-Sign](https://github.com/ZechengLi19/Uni-Sign) (ICLR 2025), pose-only, fine-tuned on OpenASL | [ASL Citizen](https://github.com/microsoft/ASL-citizen-code) ST-GCN (Microsoft, NeurIPS 2023) |
 | Input | A whole sentence, signed naturally. Rest your hands to finish. | One sign, then lower your hands. |
-| Output | Top-3 English sentences | Top-5 signs from a 103-label ER vocabulary (`data/medical_vocab.json`) |
-| Quality | Research-grade: often gets the gist, often wrong. Low-confidence results are flagged. | 86% top-1 / 98.5% top-5 on held-out Deaf signers (ER vocabulary) |
+| Output | Top-3 closest phrases from an editable ER phrase bank (`data/er_phrases.json`), plus the model's free translation | Top-5 signs from a 103-label ER vocabulary (`data/medical_vocab.json`) |
+| Quality | Right ER phrase ranked 1st 53%, in top 3 66% (held-out Deaf signers). Free translation of ER phrases is usually wrong. | 86% top-1 / 98.5% top-5 on held-out Deaf signers (ER vocabulary) |
 
 It **cannot**:
 - translate like a human interpreter;
@@ -47,6 +47,8 @@ All numbers come from running **our** live pipeline code on held-out data (`scri
 | Natural signing (Uni-Sign) | 60 held-out OpenASL test clips, lightweight pose | BLEU-4 **15.5**, chrF 37.7 | BLEU-4 22.7 (full 976-clip test set) |
 | | Quality vs. model confidence | Above-median score: chrF 42.6. Below: chrF 21.2 (r = 0.64) | — |
 | | Translation latency (M4 Max, MPS) | p50 **498 ms**, max 1.5 s after the sentence ends | — |
+| Natural signing, ER phrase bank | 220 bank phrases built from 5 held-out ASL Citizen signers' signs, 58-phrase bank | right phrase **1st 53%**, **top-3 66%** (chance 1.7%); free translation ~0% | — |
+| | Phrase ranking latency | p50 ~140 ms extra | — |
 | Live camera pipeline | MacBook camera, M4 Max | **30 fps** in both modes (camera limit) | — |
 | Precise (ASL Citizen) | 150 random held-out clips, all 2,731 signs | top-1 **60.7%**, top-5 88.0% | 59.5% / 82.7% |
 | | 339 held-out clips of ER signs, ER vocabulary | top-1 **86.1%**, top-5 **98.5%** | — |
@@ -137,6 +139,7 @@ pytest                                   # 69 tests: parity with upstream prepro
 (cd web && npx vitest run)               # frontend helpers
 python scripts/fetch_eval_clips.py --n 60 && python scripts/eval_unisign.py --pose-mode lightweight
 python scripts/eval_islr.py --n-random 150 --per-gloss 3
+python scripts/eval_phrase_bank.py       # natural signing + ER phrase bank
 python scripts/eval_asr.py               # add --live for a real speaker
 METRICS_LOG=1 python -m medbridge.server # logs timings/scores/labels (no text/audio/video) to data/metrics.jsonl
 ```

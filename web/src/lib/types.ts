@@ -1,6 +1,6 @@
 export type Caption = { id: number; text: string; original: string | null; t: number }
 export type Message = { id: number; text: string; source: string; edited: boolean; t: number; glosses: string[] }
-export type Candidate = { text: string; score: number; rel_score: number }
+export type Candidate = { text: string; score: number; rel_score: number; kind?: 'phrase' | 'free' }
 export type TopK = { label: string; glosses: string[]; p: number }
 export type PreciseItem = { seg_id: number; topk: TopK[]; uncertain: boolean; chosen: string | null; latency_ms: number | null }
 export type SignState = 'idle' | 'hands' | 'signing' | 'translating' | 'recognizing' | 'loading' | 'no_camera'

@@ -83,6 +83,22 @@ class UniSignPose(nn.Module):
         texts = self.mt5_tokenizer.batch_decode(out.sequences, skip_special_tokens=True)
         return list(zip(texts, out.sequences_scores.float().tolist()))
 
+    @torch.no_grad()
+    def rank(self, src_input, phrases):
+        """Score fixed English phrases against the signing (teacher forcing): mean log-probability
+        per token of each phrase given the video. Returns [(phrase, score)] best-first."""
+        inputs_embeds, attention_mask = self.encode(src_input)
+        enc = self.mt5_model.encoder(inputs_embeds=inputs_embeds, attention_mask=attention_mask).last_hidden_state
+        tok = self.mt5_tokenizer(list(phrases), return_tensors="pt", padding=True).to(enc.device)
+        labels = tok.input_ids.masked_fill(tok.input_ids == self.mt5_tokenizer.pad_token_id, -100)
+        n = len(phrases)
+        logits = self.mt5_model(encoder_outputs=(enc.expand(n, -1, -1),), attention_mask=attention_mask.expand(n, -1),
+                                labels=labels).logits
+        logp = torch.log_softmax(logits.float(), -1).gather(-1, labels.clamp(min=0)[..., None])[..., 0]
+        valid = (labels != -100).float()
+        scores = ((logp * valid).sum(1) / valid.sum(1)).tolist()
+        return sorted(zip(phrases, scores), key=lambda x: -x[1])
+
 
 def load_unisign(ckpt_path, lang="English", device="cpu", dtype=torch.float32, mt5_path="google/mt5-base"):
     model = UniSignPose(mt5_path, lang)

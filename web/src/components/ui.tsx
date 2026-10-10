@@ -98,7 +98,8 @@ export function Icon({ name, size = 18 }: { name: 'check' | 'edit' | 'retry' | '
 }
 
 export const sourceLabel: Record<string, string> = {
-  natural: 'Natural signing · model output',
+  natural: 'Natural signing · free translation',
+  'natural-phrase': 'Natural signing · closest ER phrase',
   'precise-literal': 'One sign at a time · literal',
   'precise-llm': 'One sign at a time · rephrased by Claude',
   '': 'Typed by patient',

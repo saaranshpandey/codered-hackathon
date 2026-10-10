@@ -25,12 +25,17 @@ def _fresh(mode="natural", asr_state="listening"):
     }
 
 
+def _natural_source(candidate):
+    return "natural-phrase" if candidate.get("kind") == "phrase" else "natural"
+
+
 class Hub:
     def __init__(self, broadcast, translate, on_mode=None, on_asr_pause=None, on_sign_done=None,
-                 precise_threshold=0.3, natural_min_score=-1.0, async_translate=False):
+                 precise_threshold=0.3, natural_min_score=-1.0, phrase_min_score=-1.5, async_translate=False):
         self.broadcast, self.translate = broadcast, translate
         self.on_mode, self.on_asr_pause, self.on_sign_done = on_mode, on_asr_pause, on_sign_done
         self.precise_threshold, self.natural_min_score = precise_threshold, natural_min_score
+        self.phrase_min_score = phrase_min_score
         self.async_translate = async_translate
         self.lock = threading.RLock()
         self.state = _fresh()
@@ -107,12 +112,13 @@ class Hub:
         with self.lock:
             if self.state["sign"]["mode"] == "precise":
                 return  # translation finished after the patient switched modes
-            cands = result["candidates"]
-            self.state["natural"] = {
-                "seg_id": result["seg_id"], "candidates": cands, "latency_ms": result.get("latency_ms"),
-                "selected": 0, "low_confidence": cands[0]["score"] < self.natural_min_score,
-            }
-            self.state["draft"] = {"text": cands[0]["text"], "source": "natural", "edited": False}
+            phrases, free = result.get("phrases") or [], result["candidates"]
+            # Closest ER-bank phrases first, then the model's own free translation as a fallback.
+            cands = [{**p, "kind": "phrase"} for p in phrases] + [{**c, "kind": "free"} for c in (free[:1] if phrases else free)]
+            low = phrases[0]["score"] < self.phrase_min_score if phrases else free[0]["score"] < self.natural_min_score
+            self.state["natural"] = {"seg_id": result["seg_id"], "candidates": cands, "latency_ms": result.get("latency_ms"),
+                                     "selected": 0, "low_confidence": low}
+            self.state["draft"] = {"text": cands[0]["text"], "source": _natural_source(cands[0]), "edited": False}
             self._publish()
 
     def on_sign_prediction(self, seg_id, topk, latency_ms=None):
@@ -143,7 +149,8 @@ class Hub:
                 i = msg.get("index")
                 if isinstance(i, int) and 0 <= i < len(s["natural"]["candidates"]):
                     s["natural"]["selected"] = i
-                    s["draft"] = {"text": s["natural"]["candidates"][i]["text"], "source": "natural", "edited": False}
+                    cand = s["natural"]["candidates"][i]
+                    s["draft"] = {"text": cand["text"], "source": _natural_source(cand), "edited": False}
             elif kind == "sign.pick":
                 for item in s["precise"]:
                     if item["seg_id"] == msg.get("seg_id") and any(t["label"] == msg.get("label") for t in item["topk"]):

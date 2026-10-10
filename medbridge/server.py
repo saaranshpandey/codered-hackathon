@@ -73,7 +73,8 @@ def start_engines(app, hub):
                             glosses, vocab)
     signer = NaturalSigner(ROOT / "data/models/openasl_pose_only_slt.pth",
                            device="mps" if torch.backends.mps.is_available() else "cpu",
-                           pose_mode=_env("NATURAL_POSE_MODE", "lightweight"))
+                           pose_mode=_env("NATURAL_POSE_MODE", "lightweight"),
+                           phrases=_json.loads((ROOT / "data/er_phrases.json").read_text())["patient"])
     natural = NaturalEngine(hub, signer, rest_line=float(_env("REST_LINE", "0.85")))
     vision = Vision(hub, int(_env("CAMERA_INDEX", "0")), {"natural": natural, "precise": precise},
                     mode=hub.state["sign"]["mode"])
@@ -114,6 +115,7 @@ def create_app(engines=True, patient_local_only=None):
     hub = Hub(broadcast=clients.broadcast, translate=make_translator(),
               precise_threshold=float(_env("PRECISE_THRESHOLD", "0.3")),
               natural_min_score=float(_env("NATURAL_MIN_SCORE", "-0.65")),
+              phrase_min_score=float(_env("PHRASE_MIN_SCORE", "-1.5")),
               async_translate=llm)
     hub.state["sign"]["mode"] = _env("DEFAULT_MODE", "natural")
 
@@ -193,4 +195,5 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
     load_dotenv(ROOT / ".env")
-    uvicorn.run(create_app(), host=_env("HOST", "0.0.0.0"), port=int(_env("PORT", "8000")))
+    # The MJPEG camera stream never ends on its own, so cap graceful shutdown or Ctrl+C waits forever.
+    uvicorn.run(create_app(), host=_env("HOST", "0.0.0.0"), port=int(_env("PORT", "8000")), timeout_graceful_shutdown=2)

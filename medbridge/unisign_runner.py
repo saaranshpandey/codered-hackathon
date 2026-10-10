@@ -53,9 +53,17 @@ def rel_scores(seq_scores):
     return (s / s.sum()).tolist()
 
 
+def top_phrases(ranked, k=3):
+    """Best k bank phrases; rel_score is each phrase's share of the softmax over the WHOLE bank."""
+    rel = rel_scores([s for _, s in ranked])
+    return [{"text": p, "score": s, "rel_score": r} for (p, s), r in list(zip(ranked, rel))[:k]]
+
+
 class NaturalSigner:
-    def __init__(self, ckpt, device="mps", dtype=torch.float32, pose_mode="lightweight", max_length=256, pose_device="mps"):
+    def __init__(self, ckpt, device="mps", dtype=torch.float32, pose_mode="lightweight", max_length=256, pose_device="mps",
+                 phrases=None):
         self.wholebody = make_pose(pose_mode, pose_device)
+        self.phrases = list(phrases or [])  # ER phrase bank ranked against each sentence
         self.model, _ = load_unisign(ckpt, lang="English", device=device, dtype=dtype)
         self.device, self.dtype, self.max_length = device, dtype, max_length
 
@@ -72,7 +80,8 @@ class NaturalSigner:
                for k, v in src.items()}
         out = self.model.translate(src)
         rel = rel_scores([s for _, s in out])
-        return {
-            "candidates": [{"text": t, "score": s, "rel_score": r} for (t, s), r in zip(out, rel)],
-            "latency_ms": round((time.perf_counter() - t0) * 1000),
-        }
+        result = {"candidates": [{"text": t, "score": s, "rel_score": r} for (t, s), r in zip(out, rel)]}
+        if self.phrases:
+            result["phrases"] = top_phrases(self.model.rank(src, self.phrases))
+        result["latency_ms"] = round((time.perf_counter() - t0) * 1000)
+        return result

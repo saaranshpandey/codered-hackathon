@@ -110,7 +110,11 @@ On the patient view, choose **Natural signing**.
 - If the sentence does not end, press **Done signing**.
 - Three English candidates appear. Pick the right one if any, then confirm, **Edit**, or **Retry**.
 
-**Expectations: mostly wrong for ER phrases, even with perfect signing.**
+**What you get:** the three **closest ER phrases** from `data/er_phrases.json`, ranked by the model, plus its own
+**free translation** as a fourth option. On held-out Deaf signers, the right phrase came first 53% of the time and was
+in the top 3 66% of the time. A phrase that is not in the list can never be returned. Add the phrases you need to the list.
+
+**Why there is a phrase list: free translation is mostly wrong for ER phrases, even with perfect signing.**
 This model was trained on fluent signers in news and instructional videos. It rarely saw body parts or symptoms.
 When we fed it held-out videos of *Deaf signers* performing these signs, it got only HELLO right:
 
@@ -125,7 +129,7 @@ When we fed it held-out videos of *Deaf signers* performing these signs, it got 
 On news-style sentences it does much better. For example, it translated "Will this movie beat any of the top 3 movies?"
 as "Well, would that movie beat any of the three movies?"
 
-So use natural mode as a research demo: try HELLO, then a sentence or two. Answer ER questions in precise mode.
+Use the phrase list for ER replies, and one sign at a time when none of the three phrases is right.
 A **Low confidence** banner means the model itself rates the result as weak.
 
 ASL word order differs from English, so sign the gloss column.
@@ -135,7 +139,7 @@ ASL word order differs from English, so sign the gloss column.
 |---|---|---|
 | 1 | My stomach hurts. | MY STOMACH HURT |
 | 2 | My head hurts. | MY HEAD HURT |
-| 3 | I can't breathe well. | ME BREATHE CAN'T |
+| 3 | I can't breathe. | ME BREATHE CAN'T |
 | 4 | The pain started yesterday. | YESTERDAY PAIN START |
 | 5 | I feel dizzy. | ME FEEL DIZZY |
 | 6 | I vomited this morning. | MORNING ME VOMIT |
@@ -147,7 +151,7 @@ ASL word order differs from English, so sign the gloss column.
 | 12 | I need the bathroom. | ME NEED BATHROOM |
 | 13 | I am cold. | ME COLD |
 | 14 | Please call my wife. | PLEASE CALL MY WIFE |
-| 15 | I don't understand, please write it down. | ME UNDERSTAND NOT, PLEASE WRITE |
+| 15 | I don't understand. | ME UNDERSTAND NOT |
 | 16 | I am deaf. | ME DEAF |
 | 17 | My heart hurts. | MY HEART HURT |
 | 18 | Thank you. | THANK-YOU |
