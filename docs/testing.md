@@ -198,6 +198,14 @@ typing was needed. The doctor's System panel shows translation and recognition l
 | Full exchanges successful (of 5) | |
 | Typical latency: caption, sentence, sign (System panel) | |
 
+## If a sign is recognized as the wrong word
+
+Run `python scripts/debug_sign.py --expect HURT` (use the word you meant) and sign it once after the countdown.
+- The script prints the model's top 5.
+- It compares your hand tracking, spacing, height and sideways movement with Deaf signers' reference clips of the
+  word you meant and of the word the model picked. The differences show what to change.
+- Only landmark coordinates are saved, to `data/debug/`. No video is saved.
+
 ## If something is off
 
 | Symptom | Try |
