@@ -113,3 +113,14 @@ def test_builder_uses_dictionary_then_signmt_then_text():
     assert [(w["word"], w["source"]) for w in timeline] == [("you", "aslc"), ("okay", "none"), ("chest", "signmt"), ("pain", "none")]
     assert calls == ["okay", "chest", "pain"]   # only words missing from the local dictionary leave the Mac
     assert motion.shape[1:] == (178, 3)
+
+
+def test_concurrent_downloads_use_separate_temp_files(tmp_path):
+    from medbridge.text2sign import AslCitizenSigns
+
+    (tmp_path / "data/aslc/ASL_Citizen/splits").mkdir(parents=True)
+    (tmp_path / "data/aslc/ASL_Citizen/splits/train.csv").write_text("Participant ID,Video file,Gloss,ASL-LEX Code\n")
+    a, b = AslCitizenSigns(tmp_path), AslCitizenSigns(tmp_path)
+    with a._temp_clip() as pa, b._temp_clip() as pb:
+        assert pa != pb
+    assert not pa.exists() and not pb.exists()

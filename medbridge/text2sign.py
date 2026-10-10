@@ -12,9 +12,12 @@ Motion layout (shared with sign.mt's pose files): 178 points x (x, y, z)
 Missing points are NaN.
 """
 import base64
+import contextlib
 import csv
 import logging
+import os
 import re
+import tempfile
 import threading
 import urllib.parse
 import urllib.request
@@ -190,6 +193,17 @@ class AslCitizenSigns:
             np.save(path, seq)
         return seq
 
+    @contextlib.contextmanager
+    def _temp_clip(self):
+        """A private temp file per download, so parallel builders never overwrite each other's video."""
+        fd, name = tempfile.mkstemp(suffix=".mp4", dir=self.cache)
+        os.close(fd)
+        path = Path(name)
+        try:
+            yield path
+        finally:
+            path.unlink(missing_ok=True)
+
     def _build(self, gloss):
         import cv2
         import mediapipe as mp
@@ -205,18 +219,18 @@ class AslCitizenSigns:
                 log.warning("ASL Citizen fetch failed for %s: %s", gloss, e)
                 self._zip = None
                 continue
-            tmp = self.cache / "_clip.mp4"
-            tmp.write_bytes(data)
-            cap = cv2.VideoCapture(str(tmp))
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30
             frames = []
-            with mp.solutions.holistic.Holistic(static_image_mode=False, min_detection_confidence=0.5) as h:
-                while True:
-                    ok, img = cap.read()
-                    if not ok:
-                        break
-                    frames.append(holistic_frame(h.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)), img.shape[1], img.shape[0]))
-            tmp.unlink(missing_ok=True)
+            with self._temp_clip() as tmp:
+                tmp.write_bytes(data)
+                cap = cv2.VideoCapture(str(tmp))
+                fps = cap.get(cv2.CAP_PROP_FPS) or 30
+                with mp.solutions.holistic.Holistic(static_image_mode=False, min_detection_confidence=0.5) as h:
+                    while True:
+                        ok, img = cap.read()
+                        if not ok:
+                            break
+                        frames.append(holistic_frame(h.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)), img.shape[1], img.shape[0]))
+                cap.release()
             if not frames:
                 continue
             seq = np.array(frames)
