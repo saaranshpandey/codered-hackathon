@@ -1,8 +1,11 @@
 """Doctor speech -> live captions: Silero VAD segments utterances, mlx-whisper transcribes them.
 Audio stays in memory and is dropped after transcription."""
 import collections
+import time
 
 import numpy as np
+
+from medbridge import metrics
 
 WHISPER_REPO = "mlx-community/whisper-large-v3-turbo"
 # Biases spelling toward ER vocabulary; it is a decoding hint, not inserted text.
@@ -47,10 +50,13 @@ class SpeechPipeline:
         for kind, audio in self.seg.push(block, prob):
             if kind == "interim" and skip_interim:
                 continue
+            t0 = time.perf_counter()
             text = self.transcriber(audio)
             if text:
                 self.on_event(kind, self.utt_id, text)
             if kind == "final":
+                metrics.log("asr.final", compute_ms=round((time.perf_counter() - t0) * 1000), audio_s=round(len(audio) / 16000, 2),
+                            empty=not text)
                 self.utt_id += 1
         self.in_speech = self.seg.buf is not None
 

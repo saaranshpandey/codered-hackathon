@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import torch
 
+from medbridge import metrics
 from medbridge.islr import holistic_to_array, preprocess, topk
 from medbridge.segmenter import SignSegmenter
 
@@ -73,8 +74,11 @@ class PreciseEngine:
         t0 = time.perf_counter()
         with torch.no_grad():
             logits = self.model(preprocess(np.array(clip)))[0]
-        self.hub.on_sign_prediction(next(_seg_ids), topk(logits, self.glosses, self.vocab, k=5),
-                                    latency_ms=round((time.perf_counter() - t0) * 1000))
+        preds = topk(logits, self.glosses, self.vocab, k=5)
+        latency = round((time.perf_counter() - t0) * 1000)
+        self.hub.on_sign_prediction(next(_seg_ids), preds, latency_ms=latency)
+        metrics.log("precise.prediction", latency_ms=latency, frames=len(clip),
+                    top=[(p["label"], round(p["p"], 3)) for p in preds[:3]])
         self.hub.on_sign_status("idle")
 
 
@@ -128,6 +132,8 @@ class NaturalEngine:
     def _translate(self, clip):
         out = self.signer.translate([k for k, _ in clip], [s for _, s in clip])
         out["seg_id"] = next(_seg_ids)
+        metrics.log("natural.sentence", latency_ms=out["latency_ms"], frames=len(clip),
+                    scores=[round(c["score"], 3) for c in out["candidates"]])
         self.hub.on_sentence(out)
         self.hub.on_sign_status("idle")
 

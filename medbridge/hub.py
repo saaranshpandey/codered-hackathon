@@ -7,6 +7,8 @@ import copy
 import threading
 import time
 
+from medbridge import metrics
+
 PATIENT_ACTIONS = {"mode.set", "candidate.pick", "sign.pick", "sign.remove", "draft.edit",
                    "draft.confirm", "draft.clear", "sign.done"}
 DOCTOR_ACTIONS = {"caption.correct", "asr.pause", "asr.resume", "session.end"}
@@ -150,6 +152,10 @@ class Hub:
             elif kind == "draft.confirm":
                 if not s["draft"]["text"].strip():
                     return
+                metrics.log("draft.confirm", source=s["draft"]["source"], edited=s["draft"]["edited"],
+                            candidate=s["natural"]["selected"] if s["natural"] else None,
+                            low_confidence=s["natural"]["low_confidence"] if s["natural"] else None,
+                            signs=[i["chosen"] for i in s["precise"] if i["chosen"]])
                 s["messages"].append({"id": self._id(), "text": s["draft"]["text"].strip(), "source": s["draft"]["source"],
                                       "edited": s["draft"]["edited"], "t": time.time(),
                                       "glosses": [i["chosen"] for i in s["precise"] if i["chosen"]]})
