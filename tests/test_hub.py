@@ -1,0 +1,129 @@
+import pytest
+
+
+def literal(labels):
+    return " ".join(labels).capitalize() + ".", "precise-literal"
+
+
+@pytest.fixture
+def hub():
+    from medbridge.hub import Hub
+
+    sent = []
+    h = Hub(broadcast=sent.append, translate=literal, precise_threshold=0.3, natural_min_score=-1.0)
+    h.sent = sent
+    return h
+
+
+def sentence(seg_id, texts_scores):
+    return {"seg_id": seg_id, "latency_ms": 900,
+            "candidates": [{"text": t, "score": s, "rel_score": 1 / len(texts_scores)} for t, s in texts_scores]}
+
+
+def test_final_caption_replaces_interim_and_is_stored(hub):
+    hub.on_caption("interim", 0, "Are you exper")
+    assert hub.state["interim"] == {"id": 0, "text": "Are you exper"}
+    hub.on_caption("final", 0, "Are you experiencing chest pain?")
+    assert hub.state["interim"] is None
+    assert hub.state["captions"][-1]["text"] == "Are you experiencing chest pain?"
+
+
+def test_doctor_correction_keeps_original_text(hub):
+    hub.on_caption("final", 0, "Are you allergic to pencil in?")
+    cid = hub.state["captions"][0]["id"]
+    hub.apply({"type": "caption.correct", "id": cid, "text": "Are you allergic to penicillin?"}, role="doctor")
+    cap = hub.state["captions"][0]
+    assert cap["text"] == "Are you allergic to penicillin?"
+    assert cap["original"] == "Are you allergic to pencil in?"
+
+
+def test_natural_sentence_preselects_top_candidate_then_patient_picks(hub):
+    hub.on_sentence(sentence(1, [("My stomach hurts.", -0.4), ("My stomach is hurt.", -0.6), ("I have pain.", -0.9)]))
+    assert hub.state["draft"]["text"] == "My stomach hurts."
+    assert hub.state["draft"]["source"] == "natural"
+    hub.apply({"type": "candidate.pick", "index": 2}, role="patient")
+    assert hub.state["draft"]["text"] == "I have pain."
+    assert hub.state["natural"]["selected"] == 2
+
+
+def test_natural_low_score_is_flagged(hub):
+    hub.on_sentence(sentence(1, [("Something odd.", -1.8), ("Other.", -2.0), ("Else.", -2.2)]))
+    assert hub.state["natural"]["low_confidence"] is True
+
+
+def test_confirm_moves_draft_to_messages_and_clears_draft(hub):
+    hub.on_sentence(sentence(1, [("My stomach hurts.", -0.4), ("b", -0.6), ("c", -0.9)]))
+    hub.apply({"type": "draft.confirm"}, role="patient")
+    msg = hub.state["messages"][-1]
+    assert msg["text"] == "My stomach hurts." and msg["source"] == "natural" and msg["edited"] is False
+    assert hub.state["draft"]["text"] == "" and hub.state["natural"] is None
+
+
+def test_confirm_with_empty_draft_does_nothing(hub):
+    hub.apply({"type": "draft.confirm"}, role="patient")
+    assert hub.state["messages"] == []
+
+
+def test_precise_predictions_build_english_from_chosen_labels(hub):
+    hub.on_sign_prediction(1, [{"label": "stomach", "glosses": ["STOMACH"], "p": 0.8}])
+    hub.on_sign_prediction(2, [{"label": "hurt", "glosses": ["HURT"], "p": 0.7}])
+    assert [i["chosen"] for i in hub.state["precise"]] == ["stomach", "hurt"]
+    assert hub.state["draft"] == {"text": "Stomach hurt.", "source": "precise-literal", "edited": False}
+
+
+def test_uncertain_precise_prediction_waits_for_patient_pick(hub):
+    hub.on_sign_prediction(1, [{"label": "dizzy", "glosses": ["DIZZY"], "p": 0.2},
+                               {"label": "sick", "glosses": ["SICK"], "p": 0.15}])
+    item = hub.state["precise"][0]
+    assert item["uncertain"] is True and item["chosen"] is None
+    assert hub.state["draft"]["text"] == ""
+    hub.apply({"type": "sign.pick", "seg_id": 1, "label": "sick"}, role="patient")
+    assert hub.state["precise"][0]["chosen"] == "sick"
+    assert hub.state["draft"]["text"] == "Sick."
+
+
+def test_sign_remove_drops_item(hub):
+    hub.on_sign_prediction(1, [{"label": "yes", "glosses": ["YES"], "p": 0.9}])
+    hub.apply({"type": "sign.remove", "seg_id": 1}, role="patient")
+    assert hub.state["precise"] == [] and hub.state["draft"]["text"] == ""
+
+
+def test_patient_edit_marks_draft_edited(hub):
+    hub.on_sentence(sentence(1, [("My stomach hurt.", -0.4), ("b", -0.6), ("c", -0.9)]))
+    hub.apply({"type": "draft.edit", "text": "My stomach hurts."}, role="patient")
+    hub.apply({"type": "draft.confirm"}, role="patient")
+    assert hub.state["messages"][-1]["edited"] is True
+
+
+def test_mode_switch_clears_draft_and_notifies_vision():
+    from medbridge.hub import Hub
+
+    modes = []
+    h = Hub(broadcast=lambda m: None, translate=literal, on_mode=modes.append)
+    h.on_sign_prediction(1, [{"label": "yes", "glosses": ["YES"], "p": 0.9}])
+    h.apply({"type": "mode.set", "mode": "natural"}, role="patient")
+    assert h.state["sign"]["mode"] == "natural" and h.state["precise"] == []
+    assert modes == ["natural"]
+
+
+def test_roles_are_enforced(hub):
+    hub.on_sentence(sentence(1, [("My stomach hurts.", -0.4), ("b", -0.6), ("c", -0.9)]))
+    hub.apply({"type": "draft.confirm"}, role="doctor")
+    assert hub.state["messages"] == []
+    hub.on_caption("final", 0, "Hello")
+    hub.apply({"type": "caption.correct", "id": hub.state["captions"][0]["id"], "text": "Hi"}, role="patient")
+    assert hub.state["captions"][0]["text"] == "Hello"
+
+
+def test_session_end_clears_conversation(hub):
+    hub.on_caption("final", 0, "Hello")
+    hub.on_sentence(sentence(1, [("Hi.", -0.4), ("b", -0.6), ("c", -0.9)]))
+    hub.apply({"type": "draft.confirm"}, role="patient")
+    hub.apply({"type": "session.end"}, role="doctor")
+    assert hub.state["captions"] == [] and hub.state["messages"] == []
+
+
+def test_state_changes_are_broadcast_as_snapshots(hub):
+    hub.on_caption("final", 0, "Hello")
+    assert hub.sent[-1]["type"] == "state"
+    assert hub.sent[-1]["state"]["captions"][0]["text"] == "Hello"
