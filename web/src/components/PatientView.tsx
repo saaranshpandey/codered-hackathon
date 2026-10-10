@@ -11,8 +11,8 @@ type Send = (msg: Record<string, unknown>) => void
 export function PatientView() {
   const { state, connected, fps, landmarks, level, send } = useMedbridge('patient')
   return (
-    <div className="grain flex h-full min-h-[760px] flex-col bg-ink text-bone">
-      <header className="flex items-center justify-between px-10 pt-7">
+    <div className="grain flex min-h-full flex-col bg-ink text-bone lg:h-full lg:min-h-[760px]">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 lg:px-10 lg:pt-7">
         <Wordmark role="Patient" tone="dark" />
         <div className="flex items-center gap-5">
           {state && <DoctorMic asr={state.asr.state} />}
@@ -21,11 +21,11 @@ export function PatientView() {
         </div>
       </header>
       {state ? (
-        <main className="grid min-h-0 flex-1 grid-cols-12 gap-10 px-10 py-7">
-          <section className="col-span-7 flex min-h-0 flex-col">
+        <main className="grid min-h-0 flex-1 grid-cols-1 gap-6 px-5 py-5 lg:grid-cols-12 lg:gap-10 lg:px-10 lg:py-7">
+          <section className="flex max-h-[40vh] min-h-[220px] flex-col lg:col-span-7 lg:max-h-none lg:min-h-0">
             <Captions state={state} />
           </section>
-          <section className="col-span-5 flex min-h-0 flex-col gap-5 overflow-y-auto pb-2">
+          <section className="flex min-h-0 flex-col gap-5 pb-2 lg:col-span-5 lg:overflow-y-auto">
             <CameraPanel landmarks={landmarks} signState={state.sign.state} mode={state.sign.mode} fps={fps}
               compact={!!state.natural || state.precise.length > 0} />
             <ModeSwitch mode={state.sign.mode} send={send} />

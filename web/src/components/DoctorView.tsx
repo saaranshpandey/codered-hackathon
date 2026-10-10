@@ -11,10 +11,10 @@ const time = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: '2
 export function DoctorView() {
   const { state, connected, fps, level, send } = useMedbridge('doctor')
   return (
-    <div className="grain flex h-full min-h-[760px] flex-col bg-paper text-graphite">
-      <header className="flex items-center justify-between px-10 pt-7">
+    <div className="grain flex min-h-full flex-col bg-paper text-graphite lg:h-full lg:min-h-[760px]">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 lg:px-10 lg:pt-7">
         <Wordmark role="Clinician" tone="light" />
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3 lg:gap-4">
           {state && <AsrPill asr={state.asr.state} />}
           <Waveform level={level} color="#14150f" />
           {state && (
@@ -28,13 +28,14 @@ export function DoctorView() {
         </div>
       </header>
       {state ? (
-        <main className="grid min-h-0 flex-1 grid-cols-12 gap-8 px-10 py-7">
-          <section className="col-span-8 flex min-h-0 flex-col">
+        <main className="grid min-h-0 flex-1 grid-cols-1 gap-5 px-5 py-5 lg:grid-cols-12 lg:gap-8 lg:px-10 lg:py-7">
+          <section className="order-2 flex min-h-[55vh] flex-col lg:order-none lg:col-span-8 lg:min-h-0">
             <Timeline state={state} send={send} />
           </section>
-          <aside className="col-span-4 flex min-h-0 flex-col gap-5 overflow-y-auto">
-            <LiveLane state={state} />
-            <Readouts state={state} fps={fps} send={send} />
+          {/* Narrow windows: live lane, then conversation, then system (aside dissolves into the grid). */}
+          <aside className="contents lg:col-span-4 lg:flex lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-y-auto">
+            <div className="order-1 lg:order-none"><LiveLane state={state} /></div>
+            <div className="order-3 lg:order-none"><Readouts state={state} fps={fps} send={send} /></div>
           </aside>
         </main>
       ) : (

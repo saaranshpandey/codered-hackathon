@@ -141,13 +141,27 @@ class NaturalEngine:
         self.hub.on_sign_status("idle")
 
 
-class Vision:
-    """Owns the camera. Runs the active engine on every frame and keeps the latest JPEG."""
+MAX_WIDTH = 1280
 
-    def __init__(self, hub, camera_index, engines, mode="natural"):
+
+def _open_camera(index):
+    cap = cv2.VideoCapture(index, cv2.CAP_AVFOUNDATION)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    return cap
+
+
+class Vision:
+    """Owns the camera. A capture thread keeps only the newest frame; the processing thread runs
+    the active engine on whatever is newest, so slow frames drop old ones instead of queueing."""
+
+    def __init__(self, hub, camera_index, engines, mode="natural", capture=_open_camera):
         self.hub, self.camera_index, self.engines, self.mode = hub, camera_index, engines, mode
+        self.capture = capture
         self.jpeg, self.fps = None, 0.0
         self.frame_ready = threading.Condition()
+        self._latest, self._seq = None, 0
+        self._new_frame = threading.Condition()
         self._force_end = False
 
     def set_mode(self, mode):
@@ -159,20 +173,31 @@ class Vision:
     def start(self):
         threading.Thread(target=self._run, daemon=True, name="vision").start()
 
-    def _run(self):
-        cap = cv2.VideoCapture(self.camera_index, cv2.CAP_AVFOUNDATION)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        if not cap.isOpened():
-            self.hub.on_sign_status("no_camera")
-            return
-        engine, n, t0 = None, 0, time.perf_counter()
+    def _capture_loop(self, cap):
         while True:
             ok, frame = cap.read()
             if not ok:
                 self.hub.on_sign_status("no_camera")
                 time.sleep(0.5)
                 continue
+            if frame.shape[1] > MAX_WIDTH:  # e.g. the MacBook camera ignores the 720p request
+                frame = cv2.resize(frame, (MAX_WIDTH, round(frame.shape[0] * MAX_WIDTH / frame.shape[1])),
+                                   interpolation=cv2.INTER_AREA)
+            with self._new_frame:
+                self._latest, self._seq = frame, self._seq + 1
+                self._new_frame.notify()
+
+    def _run(self):
+        cap = self.capture(self.camera_index)
+        if not cap.isOpened():
+            self.hub.on_sign_status("no_camera")
+            return
+        threading.Thread(target=self._capture_loop, args=(cap,), daemon=True, name="capture").start()
+        engine, seen, n, t0 = None, 0, 0, time.perf_counter()
+        while True:
+            with self._new_frame:
+                self._new_frame.wait_for(lambda: self._seq != seen)
+                frame, seen = self._latest, self._seq
             if engine is not self.engines[self.mode]:
                 engine = self.engines[self.mode]
                 engine.seg.force_end()  # drop any half-finished clip from the other mode

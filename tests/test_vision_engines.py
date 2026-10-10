@@ -120,3 +120,69 @@ def test_translating_status_is_not_overwritten_while_worker_runs():
         eng.on_pose((k, s))
     assert hub.statuses[-1] == "translating"
     release.set()
+
+
+class FakeCap:
+    """Camera that produces a new 1080p frame every 5 ms; pixel [0,0,0] carries the frame number."""
+
+    def __init__(self):
+        self.i = 0
+
+    def isOpened(self):
+        return True
+
+    def set(self, *a):
+        pass
+
+    def read(self):
+        import time
+        time.sleep(0.005)
+        self.i += 1
+        f = np.zeros((1080, 1920, 3), np.uint8)
+        f[0, 0, 0] = self.i % 256
+        return True, f
+
+
+class SlowEngine:
+    name = "natural"
+
+    def __init__(self):
+        from medbridge.segmenter import SignSegmenter
+        self.seg = SignSegmenter()
+        self.seen, self.shapes = [], []
+
+    def extract(self, frame):
+        import time
+        time.sleep(0.03)
+        self.shapes.append(frame.shape)
+        return int(frame[0, 0, 0])
+
+    def on_pose(self, pose):
+        self.seen.append(pose)
+
+    def landmarks(self, pose):
+        return {"hands": [], "body": []}
+
+    def force_end(self):
+        pass
+
+
+class StreamHub(HubStub):
+    def stream(self, msg):
+        pass
+
+
+def test_vision_processes_latest_frame_without_backlog_at_720p():
+    import time
+
+    from medbridge.vision import Vision
+
+    eng = SlowEngine()
+    v = Vision(StreamHub(), 0, {"natural": eng}, mode="natural", capture=lambda index: FakeCap())
+    v.start()
+    time.sleep(0.6)
+    seen = eng.seen[:]
+    assert len(seen) >= 8
+    gaps = [b - a for a, b in zip(seen, seen[1:]) if b > a]
+    assert max(gaps) > 1                      # stale frames were skipped, not queued
+    assert set(eng.shapes) == {(720, 1280, 3)}

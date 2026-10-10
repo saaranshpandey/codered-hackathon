@@ -44,15 +44,17 @@ All numbers come from running **our** live pipeline code on held-out data (`scri
 
 | Component | Test | Result | Published |
 |---|---|---|---|
-| Natural signing (Uni-Sign) | 60 held-out OpenASL test clips, lightweight pose | BLEU-4 **14.1**, chrF 37.3 | BLEU-4 22.7 (full 976-clip test set) |
-| | Quality vs. model confidence | Above-median score: chrF 41. Below: chrF 22 (r = 0.58) | — |
-| | Translation latency (M4 Max, MPS) | p50 **556 ms**, max 1.5 s after the sentence ends | — |
+| Natural signing (Uni-Sign) | 60 held-out OpenASL test clips, lightweight pose | BLEU-4 **15.5**, chrF 37.7 | BLEU-4 22.7 (full 976-clip test set) |
+| | Quality vs. model confidence | Above-median score: chrF 42.6. Below: chrF 21.2 (r = 0.64) | — |
+| | Translation latency (M4 Max, MPS) | p50 **498 ms**, max 1.5 s after the sentence ends | — |
+| Live camera pipeline | MacBook camera, M4 Max | **30 fps** in both modes (camera limit) | — |
 | Precise (ASL Citizen) | 150 random held-out clips, all 2,731 signs | top-1 **60.7%**, top-5 88.0% | 59.5% / 82.7% |
 | | 339 held-out clips of ER signs, ER vocabulary | top-1 **86.1%**, top-5 **98.5%** | — |
 | Doctor ASR (whisper-large-v3-turbo) | 20 ER sentences × 4 synthetic voices | WER **1.5%**, medical-term recall 100% | — |
 | | Caption latency | p50 358 ms compute + 600 ms end-of-speech wait | — |
 
 Notes:
+- A larger pose model (rtmlib `performance`) scored lower (BLEU-4 11.4) and runs at about 6 fps, so `lightweight` is used.
 - The ASR numbers use synthesized speech. Run `python scripts/eval_asr.py --live` with a real speaker to measure the real case.
 - The live signing accuracy depends on the signer. Measure it with the protocol in [Testing](#testing-and-measurement).
 
@@ -127,6 +129,9 @@ Tips:
 
 ## Testing and measurement
 
+Step-by-step test examples for one Mac (signs, sentences, doctor lines, what to record) are in
+[docs/testing.md](docs/testing.md).
+
 ```bash
 pytest                                   # 69 tests: parity with upstream preprocessing, segmenters, hub, server, ASR
 (cd web && npx vitest run)               # frontend helpers
@@ -149,8 +154,8 @@ METRICS_LOG=1 python -m medbridge.server # logs timings/scores/labels (no text/a
 | "Camera unavailable" / black frames | System Settings → Privacy & Security → Camera: enable the app running Python (Terminal, iTerm or VS Code), then restart that app. Check `CAMERA_INDEX` with `scripts/check_devices.py`. Continuity Camera (an iPhone) can take index 0. |
 | No captions; mic level flat | Privacy & Security → Microphone, same as above. Set `MIC_NAME=Logitech` to use the webcam mic. |
 | `module 'mediapipe' has no attribute 'solutions'` | Install exactly `mediapipe==0.10.21`. Later versions removed `solutions`. |
-| CoreML error from onnxruntime (YOLOX shape) | rtmlib already runs on the CPU provider. Do not set its device to `mps`. |
-| Low camera fps in natural mode | Use `NATURAL_POSE_MODE=lightweight`, close other heavy apps, and keep the laptop plugged in. |
+| CoreML error from onnxruntime (YOLOX shape) | The person detector must stay on CPU. Only the pose model runs on CoreML (`make_pose` in `unisign_runner.py`). |
+| Low camera fps in natural mode | The System panel on the doctor view shows fps; expect about 30. Use `NATURAL_POSE_MODE=lightweight` and keep the laptop plugged in. |
 | Doctor's Mac can't connect | Use the same Wi-Fi, keep `HOST=0.0.0.0`, and allow incoming connections for Python in the macOS firewall prompt. |
 | `GLOSS_TRANSLATOR=llm` shows "literal" | No or invalid Claude credentials (`ANTHROPIC_API_KEY` or `ant auth login`), or the network is down. The app falls back to literal text by design. |
 | MPS errors | `PYTORCH_ENABLE_MPS_FALLBACK=1 python -m medbridge.server` |

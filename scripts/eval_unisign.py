@@ -44,14 +44,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pose-mode", default="lightweight", choices=["lightweight", "balanced", "performance"])
     ap.add_argument("--device", default="mps")
+    ap.add_argument("--pose-device", default="mps", help="RTMW pose model: mps (CoreML) or cpu")
     ap.add_argument("--dtype", default="fp32", choices=["fp32", "bf16"])
     ap.add_argument("--limit", type=int, default=1000)
     args = ap.parse_args()
 
     dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float32
-    signer = NaturalSigner(CKPT, device=args.device, dtype=dtype, pose_mode=args.pose_mode)
+    signer = NaturalSigner(CKPT, device=args.device, dtype=dtype, pose_mode=args.pose_mode, pose_device=args.pose_device)
     manifest = json.loads((CLIPS / "manifest.json").read_text())
-    cache_dir = ROOT / f"data/eval/poses/{args.pose_mode}"
+    cache_dir = ROOT / f"data/eval/poses/{args.pose_mode}" if args.pose_device == "cpu" else ROOT / f"data/eval/poses/{args.pose_mode}_{args.pose_device}"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     refs, hyps, top3_hit, lat, fpss, rows = [], [], 0, [], [], []
@@ -66,7 +67,7 @@ def main():
 
     bleu = sacrebleu.corpus_bleu(hyps, [refs], tokenize="13a")
     chrf = sacrebleu.corpus_chrf(hyps, [refs])
-    tag = f"{args.pose_mode}_{args.device}_{args.dtype}"
+    tag = f"{args.pose_mode}-pose{args.pose_device}_{args.device}_{args.dtype}"
     (ROOT / f"data/eval/unisign_{tag}.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
     print(f"\n== {tag}: n={len(refs)}  BLEU-4={bleu.score:.2f} (published 22.67)  chrF={chrf.score:.2f}")
     print(f"   BLEU-1..4 precisions={['%.1f' % p for p in bleu.precisions]}")

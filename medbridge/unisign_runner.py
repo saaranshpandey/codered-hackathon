@@ -24,6 +24,29 @@ def select_person(keypoints, scores, thr=0.3):
     return keypoints[best][None], scores[best][None]
 
 
+def largest_box(bboxes):
+    """The patient is the person nearest the camera; posing every detected box (often ~9 on a
+    live scene) costs ~3x and the translator only reads one person anyway."""
+    bboxes = np.asarray(bboxes)
+    if len(bboxes) <= 1:
+        return bboxes
+    areas = (bboxes[:, 2] - bboxes[:, 0]) * (bboxes[:, 3] - bboxes[:, 1])
+    return bboxes[[int(np.argmax(areas))]]
+
+
+def make_pose(mode="lightweight", pose_device="mps"):
+    """rtmlib Wholebody (detector + whole-body pose) with the two models on separate devices:
+    the YOLOX detector crashes onnxruntime's CoreML provider, so it stays on CPU, while the RTMW
+    pose model runs ~4x faster on CoreML ("mps"). Returns frame -> (keypoints px, scores)."""
+    from rtmlib import RTMPose, YOLOX, Wholebody
+
+    m = Wholebody.MODE[mode]
+    det = YOLOX(m["det"], model_input_size=m["det_input_size"], backend="onnxruntime", device="cpu")
+    pose = RTMPose(m["pose"], model_input_size=m["pose_input_size"], to_openpose=False,
+                   backend="onnxruntime", device=pose_device)
+    return lambda image: pose(image, bboxes=largest_box(det(image)))
+
+
 def rel_scores(seq_scores):
     """Softmax over beam scores: the model's relative preference between its candidates."""
     s = np.exp(np.array(seq_scores) - max(seq_scores))
@@ -31,11 +54,8 @@ def rel_scores(seq_scores):
 
 
 class NaturalSigner:
-    def __init__(self, ckpt, device="mps", dtype=torch.float32, pose_mode="balanced", max_length=256, pose_device="cpu"):
-        from rtmlib import Wholebody
-
-        self.wholebody = Wholebody(to_openpose=False, mode=pose_mode, backend="onnxruntime",
-                                   device=pose_device)
+    def __init__(self, ckpt, device="mps", dtype=torch.float32, pose_mode="lightweight", max_length=256, pose_device="mps"):
+        self.wholebody = make_pose(pose_mode, pose_device)
         self.model, _ = load_unisign(ckpt, lang="English", device=device, dtype=dtype)
         self.device, self.dtype, self.max_length = device, dtype, max_length
 
