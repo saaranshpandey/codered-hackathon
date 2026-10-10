@@ -90,3 +90,33 @@ def test_natural_engine_force_end_translates_partial_sentence():
         eng.on_pose((k, s))
     eng.force_end()
     assert len(hub.sentences) == 1
+
+
+def test_hand_blip_without_a_sign_returns_status_to_idle():
+    from medbridge.vision import NaturalEngine
+
+    hub = HubStub()
+    eng = NaturalEngine(hub, FakeSigner(), background=False)
+    for k, s in [rtm_pose(0.9, 0.5)] * 2 + [rtm_pose(0.1, 0.5)] * 3:
+        eng.on_pose((k, s))
+    assert hub.statuses[-1] == "idle"
+
+
+def test_translating_status_is_not_overwritten_while_worker_runs():
+    import threading
+
+    from medbridge.vision import NaturalEngine
+
+    release = threading.Event()
+
+    class SlowSigner(FakeSigner):
+        def translate(self, skeletons, confs):
+            release.wait(5)
+            return super().translate(skeletons, confs)
+
+    hub = HubStub()
+    eng = NaturalEngine(hub, SlowSigner(), background=True)
+    for k, s in [rtm_pose(0.9, 0.5)] * 30 + [rtm_pose(0.1, 0.5)] * 30:
+        eng.on_pose((k, s))
+    assert hub.statuses[-1] == "translating"
+    release.set()

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def app():
     from medbridge.server import create_app
-    return create_app(engines=False)
+    return create_app(engines=False, patient_local_only=False)
 
 
 def test_ws_sends_snapshot_on_connect(app):
@@ -61,3 +61,26 @@ def test_broadcast_after_event_loop_closed_is_ignored():
     clients.loop = loop
     loop.close()
     clients.broadcast({"type": "state", "state": {}})  # engine thread during shutdown: must not raise
+
+
+def test_malformed_ws_message_does_not_close_socket(app):
+    with TestClient(app) as c, c.websocket_connect("/ws?role=patient") as pat:
+        pat.receive_json()
+        pat.send_json(["not", "an", "object"])
+        pat.send_json({"type": "candidate.pick", "index": "x"})
+        pat.send_json({"type": "mode.set", "mode": "precise"})
+        modes = [pat.receive_json()["state"]["sign"]["mode"] for _ in range(2)]  # ignored pick may echo a snapshot first
+        assert modes[-1] == "precise"
+
+
+def test_patient_controls_and_camera_are_local_only_by_default():
+    from medbridge.server import create_app
+
+    app = create_app(engines=False, patient_local_only=True)
+    with TestClient(app) as c:  # TestClient connects from host "testclient", i.e. not loopback
+        assert c.get("/video.mjpg").status_code == 403
+        with pytest.raises(Exception):
+            with c.websocket_connect("/ws?role=patient") as ws:
+                ws.receive_json()
+        with c.websocket_connect("/ws?role=doctor") as ws:
+            assert ws.receive_json()["type"] == "state"

@@ -11,6 +11,7 @@ def hub():
 
     sent = []
     h = Hub(broadcast=sent.append, translate=literal, precise_threshold=0.3, natural_min_score=-1.0)
+    h.state["sign"]["mode"] = "any"  # engine-event tests below are mode-agnostic unless they set a mode
     h.sent = sent
     return h
 
@@ -127,3 +128,39 @@ def test_state_changes_are_broadcast_as_snapshots(hub):
     hub.on_caption("final", 0, "Hello")
     assert hub.sent[-1]["type"] == "state"
     assert hub.sent[-1]["state"]["captions"][0]["text"] == "Hello"
+
+
+def test_late_sentence_after_switch_to_precise_is_ignored(hub):
+    hub.apply({"type": "mode.set", "mode": "precise"}, role="patient")
+    hub.on_sentence(sentence(1, [("My stomach hurts.", -0.4), ("b", -0.6), ("c", -0.9)]))
+    assert hub.state["natural"] is None and hub.state["draft"]["text"] == ""
+
+
+def test_late_sign_after_switch_to_natural_is_ignored(hub):
+    hub.apply({"type": "mode.set", "mode": "natural"}, role="patient")
+    hub.on_sign_prediction(1, [{"label": "yes", "glosses": ["YES"], "p": 0.9}])
+    assert hub.state["precise"] == []
+
+
+def test_malformed_candidate_pick_is_ignored(hub):
+    hub.on_sentence(sentence(1, [("A.", -0.4), ("B.", -0.6), ("C.", -0.9)]))
+    hub.apply({"type": "candidate.pick", "index": "two"}, role="patient")
+    assert hub.state["natural"]["selected"] == 0
+
+
+def test_async_interim_text_matches_literal_translator():
+    import threading
+
+    from medbridge.hub import Hub
+
+    gate = threading.Event()
+
+    def slow(labels):
+        gate.wait(5)
+        return "I hurt.", "precise-llm"
+
+    h = Hub(broadcast=lambda m: None, translate=slow, async_translate=True)
+    h.state["sign"]["mode"] = "precise"
+    h.on_sign_prediction(1, [{"label": "me / I", "glosses": ["ME"], "p": 0.9}])
+    assert h.state["draft"]["text"] == "Me."
+    gate.set()

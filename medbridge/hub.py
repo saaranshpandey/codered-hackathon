@@ -8,6 +8,7 @@ import threading
 import time
 
 from medbridge import metrics
+from medbridge.translate import literal
 
 PATIENT_ACTIONS = {"mode.set", "candidate.pick", "sign.pick", "sign.remove", "draft.edit",
                    "draft.confirm", "draft.clear", "sign.done"}
@@ -67,7 +68,8 @@ class Hub:
             self.state["draft"] = {"text": text, "source": source, "edited": False}
             return
         # Show the literal text at once; replace it when the (slower) translator returns.
-        self.state["draft"] = {"text": " ".join(labels).capitalize() + ".", "source": "precise-literal", "edited": False}
+        text, source = literal(labels)
+        self.state["draft"] = {"text": text, "source": source, "edited": False}
         version = self._precise_version
 
         def work():
@@ -103,6 +105,8 @@ class Hub:
 
     def on_sentence(self, result):
         with self.lock:
+            if self.state["sign"]["mode"] == "precise":
+                return  # translation finished after the patient switched modes
             cands = result["candidates"]
             self.state["natural"] = {
                 "seg_id": result["seg_id"], "candidates": cands, "latency_ms": result.get("latency_ms"),
@@ -113,6 +117,8 @@ class Hub:
 
     def on_sign_prediction(self, seg_id, topk, latency_ms=None):
         with self.lock:
+            if self.state["sign"]["mode"] == "natural":
+                return
             uncertain = not topk or topk[0]["p"] < self.precise_threshold
             self.state["precise"].append({"seg_id": seg_id, "topk": topk, "uncertain": uncertain,
                                           "chosen": None if uncertain else topk[0]["label"],
@@ -134,8 +140,8 @@ class Hub:
                 if self.on_mode:
                     self.on_mode(msg["mode"])
             elif kind == "candidate.pick" and s["natural"]:
-                i = int(msg["index"])
-                if 0 <= i < len(s["natural"]["candidates"]):
+                i = msg.get("index")
+                if isinstance(i, int) and 0 <= i < len(s["natural"]["candidates"]):
                     s["natural"]["selected"] = i
                     s["draft"] = {"text": s["natural"]["candidates"][i]["text"], "source": "natural", "edited": False}
             elif kind == "sign.pick":

@@ -61,8 +61,8 @@ class PreciseEngine:
                 self._predict(ev[1])
             else:
                 self.hub.on_sign_status("idle")
-        if self.seg.state == "idle" and hands_active_holistic(arr):
-            self.hub.on_sign_status("hands")
+        if self.seg.state == "idle":
+            self.hub.on_sign_status("hands" if hands_active_holistic(arr) else "idle")
 
     def force_end(self):
         clip = self.seg.force_end()
@@ -89,6 +89,7 @@ class NaturalEngine:
         self.hub, self.signer, self.rest_line = hub, signer, rest_line
         self.seg = SignSegmenter(start_frames=3, end_frames=21, preroll=8, postroll=9, min_frames=15, max_frames=300)
         self.background = background
+        self.busy = False  # a sentence is being translated; keep showing "translating"
         if background:
             self.jobs = queue.Queue()
             threading.Thread(target=self._worker, daemon=True, name="translate").start()
@@ -110,8 +111,8 @@ class NaturalEngine:
                 self._submit(ev[1])
             else:
                 self.hub.on_sign_status("idle")
-        if self.seg.state == "idle" and active:
-            self.hub.on_sign_status("hands")
+        if self.seg.state == "idle" and not self.busy:
+            self.hub.on_sign_status("hands" if active else "idle")
 
     def force_end(self):
         clip = self.seg.force_end()
@@ -119,6 +120,7 @@ class NaturalEngine:
             self._submit(clip)
 
     def _submit(self, clip):
+        self.busy = True
         self.hub.on_sign_status("translating")
         if self.background:
             self.jobs.put(clip)
@@ -135,6 +137,7 @@ class NaturalEngine:
         metrics.log("natural.sentence", latency_ms=out["latency_ms"], frames=len(clip),
                     scores=[round(c["score"], 3) for c in out["candidates"]])
         self.hub.on_sentence(out)
+        self.busy = False
         self.hub.on_sign_status("idle")
 
 

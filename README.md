@@ -98,6 +98,8 @@ python -m medbridge.server
 | Doctor (second Mac, same Wi-Fi) | `http://<mac-a-name>.local:8000/doctor` |
 
 - Models load in about 20 s. The UI shows "Loading…" until they are ready.
+- The camera stream and the patient controls are served only to Mac A itself. Other machines on the network
+  can open only the doctor view. Set `PATIENT_LAN=1` to allow the patient view from another machine.
 - Frontend development with hot reload: run `cd web && npm run dev`, then open http://localhost:5173/patient.
   The dev server proxies `/ws`, `/video.mjpg` and `/api` to port 8000.
 
@@ -126,7 +128,7 @@ Tips:
 ## Testing and measurement
 
 ```bash
-pytest                                   # 61 tests: parity with upstream preprocessing, segmenters, hub, server, ASR
+pytest                                   # 69 tests: parity with upstream preprocessing, segmenters, hub, server, ASR
 (cd web && npx vitest run)               # frontend helpers
 python scripts/fetch_eval_clips.py --n 60 && python scripts/eval_unisign.py --pose-mode lightweight
 python scripts/eval_islr.py --n-random 150 --per-gloss 3

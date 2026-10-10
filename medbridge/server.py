@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -21,6 +21,7 @@ from medbridge.translate import make_translator
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "web/dist"
 PATIENT_ONLY = {"landmarks"}
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 DROPPABLE = {"landmarks", "level"}
 log = logging.getLogger("medbridge")
 
@@ -102,8 +103,12 @@ def start_engines(app, hub):
     log.info("engines ready")
 
 
-def create_app(engines=True):
+def create_app(engines=True, patient_local_only=None):
+    """patient_local_only: the camera stream and patient controls are served only to this Mac
+    (the doctor view may come from the LAN). Override with PATIENT_LAN=1."""
     load_dotenv(ROOT / ".env")
+    if patient_local_only is None:
+        patient_local_only = _env("PATIENT_LAN", "0") != "1"
     clients = Clients()
     llm = _env("GLOSS_TRANSLATOR", "literal").lower() == "llm"
     hub = Hub(broadcast=clients.broadcast, translate=make_translator(),
@@ -143,14 +148,17 @@ def create_app(engines=True):
         return JSONResponse(list(dict.fromkeys(labels)))
 
     @app.get("/video.mjpg")
-    def video():
+    def video(request: Request):
+        if patient_local_only and request.client.host not in LOOPBACK:
+            return PlainTextResponse("camera stream is only served to the patient's machine", status_code=403)
         if app.state.vision is None:
             return PlainTextResponse("camera not started", status_code=503)
         return StreamingResponse(app.state.vision.mjpeg(), media_type="multipart/x-mixed-replace; boundary=frame")
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket, role: str = ""):
-        if role not in ("patient", "doctor"):
+        if role not in ("patient", "doctor") or (
+                role == "patient" and patient_local_only and ws.client.host not in LOOPBACK):
             await ws.close(code=1008)
             return
         await ws.accept()
@@ -165,7 +173,12 @@ def create_app(engines=True):
         task = asyncio.create_task(writer())
         try:
             while True:
-                hub.apply(await ws.receive_json(), role)
+                try:
+                    msg = json.loads(await ws.receive_text())
+                except ValueError:
+                    continue
+                if isinstance(msg, dict):
+                    hub.apply(msg, role)
         except WebSocketDisconnect:
             pass
         finally:
