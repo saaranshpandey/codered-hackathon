@@ -54,6 +54,55 @@ def _env(name, default):
     return os.environ.get(name, default)
 
 
+class SignWorker:
+    """Builds the signing motion for the doctor's newest caption in the background. Only the latest
+    pending caption is built; finished payloads are kept in memory (never on disk)."""
+
+    def __init__(self, hub, builder, keep=20):
+        self.hub, self.builder, self.keep = hub, builder, keep
+        self.payloads = {}
+        self.pending = None
+        self.cv = threading.Condition()
+        threading.Thread(target=self._run, daemon=True, name="signing").start()
+
+    def submit(self, caption_id, text):
+        with self.cv:
+            self.pending = (caption_id, text)
+            self.cv.notify()
+
+    def _run(self):
+        from medbridge.text2sign import payload
+
+        while True:
+            with self.cv:
+                self.cv.wait_for(lambda: self.pending is not None)
+                caption_id, text = self.pending
+                self.pending = None
+            self.hub.on_signing({"caption_id": caption_id, "status": "building", "words": None, "frames": 0, "fps": 30})
+            try:
+                motion, timeline = self.builder.build(text)
+            except Exception:
+                log.exception("signing build failed")
+                self.hub.on_signing({"caption_id": caption_id, "status": "error", "words": None, "frames": 0, "fps": 30})
+                continue
+            self.payloads[caption_id] = payload(caption_id, motion, timeline)
+            for old in sorted(self.payloads)[:-self.keep]:
+                del self.payloads[old]
+            self.hub.on_signing({"caption_id": caption_id, "status": "ready" if len(motion) else "empty",
+                                 "words": timeline, "frames": int(len(motion)), "fps": 30})
+
+
+def make_sign_builder():
+    import csv as _csv
+
+    from medbridge.text2sign import AslCitizenSigns, Builder, SignMT, build_lexicon
+
+    with open(ROOT / "data/aslc/ASL_Citizen/splits/train.csv") as f:
+        glosses = {r[2].strip() for r in list(_csv.reader(f))[1:]}
+    signmt = SignMT(ROOT) if _env("SIGN_MT", "1") == "1" else None
+    return Builder(build_lexicon(glosses), AslCitizenSigns(ROOT), signmt)
+
+
 def start_engines(app, hub):
     """Load the models and start the camera + microphone threads (runs in a background thread)."""
     import json as _json
@@ -104,7 +153,7 @@ def start_engines(app, hub):
     log.info("engines ready")
 
 
-def create_app(engines=True, patient_local_only=None):
+def create_app(engines=True, patient_local_only=None, sign_builder=None):
     """patient_local_only: the camera stream and patient controls are served only to this Mac
     (the doctor view may come from the LAN). Override with PATIENT_LAN=1."""
     load_dotenv(ROOT / ".env")
@@ -118,6 +167,11 @@ def create_app(engines=True, patient_local_only=None):
               phrase_min_score=float(_env("PHRASE_MIN_SCORE", "-1.5")),
               async_translate=llm)
     hub.state["sign"]["mode"] = _env("DEFAULT_MODE", "natural")
+    if sign_builder is None and engines and _env("SIGNING", "1") == "1":
+        sign_builder = make_sign_builder()
+    signer = SignWorker(hub, sign_builder) if sign_builder is not None else None
+    if signer:
+        hub.on_final_caption = signer.submit
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
@@ -148,6 +202,11 @@ def create_app(engines=True, patient_local_only=None):
     def vocab():
         labels = json.loads((ROOT / "data/medical_vocab.json").read_text()).values()
         return JSONResponse(list(dict.fromkeys(labels)))
+
+    @app.get("/api/signing/{caption_id}")
+    def signing(caption_id: int):
+        body = signer.payloads.get(caption_id) if signer else None
+        return JSONResponse(body) if body else PlainTextResponse("not found", status_code=404)
 
     @app.get("/video.mjpg")
     def video(request: Request):

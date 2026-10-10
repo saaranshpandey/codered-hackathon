@@ -84,3 +84,30 @@ def test_patient_controls_and_camera_are_local_only_by_default():
                 ws.receive_json()
         with c.websocket_connect("/ws?role=doctor") as ws:
             assert ws.receive_json()["type"] == "state"
+
+
+def test_final_caption_is_built_into_signing_motion_and_served():
+    import time
+
+    import numpy as np
+
+    from medbridge.server import create_app
+
+    class FakeBuilder:
+        def build(self, text):
+            motion = np.zeros((12, 178, 3), np.float32)
+            return motion, [{"word": w, "gloss": w.upper(), "source": "aslc", "start": 0, "end": 12} for w in text.split()]
+
+    app = create_app(engines=False, patient_local_only=False, sign_builder=FakeBuilder())
+    with TestClient(app) as c:
+        app.state.hub.on_caption("final", 0, "where hurt")
+        cid = app.state.hub.state["captions"][0]["id"]
+        for _ in range(50):
+            if (app.state.hub.state.get("signing") or {}).get("status") == "ready":
+                break
+            time.sleep(0.02)
+        sig = app.state.hub.state["signing"]
+        assert sig["caption_id"] == cid and [w["word"] for w in sig["words"]] == ["where", "hurt"]
+        body = c.get(f"/api/signing/{cid}").json()
+        assert body["frames"] == 12 and body["points"] == 178 and "data" in body
+        assert c.get("/api/signing/999").status_code == 404

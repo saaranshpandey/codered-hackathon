@@ -207,3 +207,22 @@ def test_sign_start_from_patient_reaches_vision():
     h.apply({"type": "sign.start"}, role="doctor")
     h.apply({"type": "sign.start"}, role="patient")
     assert started == [1]
+
+
+def test_final_and_corrected_captions_are_sent_for_signing():
+    from medbridge.hub import Hub
+
+    sent = []
+    h = Hub(broadcast=lambda m: None, translate=literal, on_final_caption=lambda cid, text: sent.append((cid, text)))
+    h.on_caption("interim", 0, "Are you")
+    h.on_caption("final", 0, "Are you in pain?")
+    cid = h.state["captions"][0]["id"]
+    h.apply({"type": "caption.correct", "id": cid, "text": "Are you in pain now?"}, role="doctor")
+    assert sent == [(cid, "Are you in pain?"), (cid, "Are you in pain now?")]
+
+
+def test_signing_status_is_published_in_state(hub):
+    hub.on_signing({"caption_id": 3, "status": "ready", "frames": 90, "fps": 30,
+                    "words": [{"word": "pain", "gloss": "PAIN", "source": "aslc", "start": 0, "end": 40}]})
+    assert hub.state["signing"]["caption_id"] == 3 and hub.state["signing"]["status"] == "ready"
+    assert hub.sent[-1]["state"]["signing"]["words"][0]["gloss"] == "PAIN"

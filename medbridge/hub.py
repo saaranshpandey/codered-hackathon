@@ -22,6 +22,7 @@ def _fresh(mode="natural", asr_state="listening"):
         "sign": {"mode": mode, "state": "idle"},
         "natural": None, "precise": [],
         "draft": {"text": "", "source": "", "edited": False},
+        "signing": None,  # doctor's latest caption as signing motion: {caption_id, status, words, frames, fps}
     }
 
 
@@ -31,10 +32,12 @@ def _natural_source(candidate):
 
 class Hub:
     def __init__(self, broadcast, translate, on_mode=None, on_asr_pause=None, on_sign_done=None, on_sign_start=None,
+                 on_final_caption=None,
                  precise_threshold=0.3, natural_min_score=-1.0, phrase_min_score=-1.5, async_translate=False):
         self.broadcast, self.translate = broadcast, translate
         self.on_mode, self.on_asr_pause, self.on_sign_done = on_mode, on_asr_pause, on_sign_done
         self.on_sign_start = on_sign_start
+        self.on_final_caption = on_final_caption
         self.precise_threshold, self.natural_min_score = precise_threshold, natural_min_score
         self.phrase_min_score = phrase_min_score
         self.async_translate = async_translate
@@ -94,7 +97,15 @@ class Hub:
                 self.state["interim"] = {"id": utt_id, "text": text}
             else:
                 self.state["interim"] = None
-                self.state["captions"].append({"id": self._id(), "text": text, "original": None, "t": time.time()})
+                cid = self._id()
+                self.state["captions"].append({"id": cid, "text": text, "original": None, "t": time.time()})
+                if self.on_final_caption:
+                    self.on_final_caption(cid, text)
+            self._publish()
+
+    def on_signing(self, info):
+        with self.lock:
+            self.state["signing"] = info
             self._publish()
 
     def on_asr_state(self, state):
@@ -189,6 +200,8 @@ class Hub:
                     if c["id"] == msg.get("id") and str(msg.get("text", "")).strip():
                         c["original"] = c["original"] or c["text"]
                         c["text"] = str(msg["text"]).strip()[:500]
+                        if self.on_final_caption:
+                            self.on_final_caption(c["id"], c["text"])
             elif kind in ("asr.pause", "asr.resume"):
                 paused = kind == "asr.pause"
                 s["asr"]["state"] = "paused" if paused else "listening"
