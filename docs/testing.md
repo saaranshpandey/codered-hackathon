@@ -22,6 +22,32 @@ python scripts/sign_reference.py && open data/sign_reference.html   # how to sig
    Lowering your hands is how the app knows you have finished.
 5. **One mic.** The MacBook mic hears everyone. The person playing the doctor speaks. The person signing stays silent.
 
+## Quick first test (2 minutes, precise mode)
+
+Use this to check that recognition works before trying anything else. Open
+`data/sign_reference.html` to watch each sign first.
+
+1. On the patient view, choose **One sign at a time**.
+2. **Framing.** Lean back or tilt the screen so the camera sees you from the belt up. STOMACH is signed at belly height,
+   and a sign outside the frame cannot be recognized.
+3. Put both hands in your lap, below the bottom of the image. The status under the camera says **Ready**.
+4. Sign **NO**:
+   - Raise one hand to chest height. Hold your index and middle fingers out together, with the thumb under them.
+   - Snap the two fingers down onto the thumb twice, like a small mouth closing.
+   - Put both hands back in your lap and keep them there for 1 second.
+   - The ring turns orange while you sign, then amber, and a chip **no** appears.
+5. Sign **STOMACH**: hold a flat hand with the palm toward your body and pat your belly twice. Then hands back in your lap.
+6. Sign **HURT**: point both index fingers at each other in front of your chest and jab them toward each other twice
+   without touching. Then hands back in your lap.
+7. The draft now reads **"No stomach hurt."** Press × on the **no** chip to remove it, so it reads **"Stomach hurt."**
+   Then press **Confirm & send**.
+   - The doctor window shows it with **✓ Confirmed by patient**.
+   - If a chip is wrong, tap it and pick the right sign from the top-5 list.
+
+Tips:
+- Sign each word **once**, slowly and clearly, facing the camera.
+- Always go back to your lap between words. Without that pause, two signs merge into one clip.
+
 ## 1. Doctor → patient captions (no signing needed)
 
 Read each line at a normal pace, then pause for 1 second.
@@ -84,10 +110,23 @@ On the patient view, choose **Natural signing**.
 - If the sentence does not end, press **Done signing**.
 - Three English candidates appear. Pick the right one if any, then confirm, **Edit**, or **Retry**.
 
-**Expectations.** This model was trained on fluent signers in news and instructional videos, not on ER sentences.
-- It will often be wrong, especially for short phrases or novice signing.
-- A **Low confidence** banner means the model itself rates the result as weak.
-- Record honestly what happens. That is the result.
+**Expectations: mostly wrong for ER phrases, even with perfect signing.**
+This model was trained on fluent signers in news and instructional videos. It rarely saw body parts or symptoms.
+When we fed it held-out videos of *Deaf signers* performing these signs, it got only HELLO right:
+
+| Signed | Model's top output |
+|---|---|
+| HELLO | "Hello!" ✓ |
+| STOMACH HURT | "He was heartbroken." |
+| HELLO STOMACH HURT | "Hello, this is my baby who is in pain." |
+| MY HEAD HURT | "I grew up in a home that had pain." |
+| ME DIZZY | "I will become sick." |
+
+On news-style sentences it does much better. For example, it translated "Will this movie beat any of the top 3 movies?"
+as "Well, would that movie beat any of the three movies?"
+
+So use natural mode as a research demo: try HELLO, then a sentence or two. Answer ER questions in precise mode.
+A **Low confidence** banner means the model itself rates the result as weak.
 
 ASL word order differs from English, so sign the gloss column.
 - For signs that are not on the reference page, look them up at `https://www.signingsavvy.com/search/<word>`.

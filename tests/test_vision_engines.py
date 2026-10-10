@@ -186,3 +186,13 @@ def test_vision_processes_latest_frame_without_backlog_at_720p():
     gaps = [b - a for a, b in zip(seen, seen[1:]) if b > a]
     assert max(gaps) > 1                      # stale frames were skipped, not queued
     assert set(eng.shapes) == {(720, 1280, 3)}
+
+
+def test_natural_engine_keeps_a_15_second_sentence_in_one_piece():
+    from medbridge.vision import NaturalEngine
+
+    hub = HubStub()
+    eng = NaturalEngine(hub, FakeSigner(), background=False)
+    for k, s in [rtm_pose(0.1, 0.5)] * 5 + [rtm_pose(0.9, 0.5)] * 450 + [rtm_pose(0.1, 0.5)] * 25:
+        eng.on_pose((k, s))
+    assert len(hub.sentences) == 1  # Uni-Sign subsamples long clips itself; the segmenter must not cut them

@@ -87,7 +87,8 @@ class NaturalEngine:
 
     def __init__(self, hub, signer, rest_line=0.85, background=True):
         self.hub, self.signer, self.rest_line = hub, signer, rest_line
-        self.seg = SignSegmenter(start_frames=3, end_frames=21, preroll=8, postroll=9, min_frames=15, max_frames=300)
+        # max_frames is only a runaway guard (30 s): Uni-Sign subsamples long clips to 256 frames itself.
+        self.seg = SignSegmenter(start_frames=3, end_frames=21, preroll=8, postroll=9, min_frames=15, max_frames=900)
         self.background = background
         self.busy = False  # a sentence is being translated; keep showing "translating"
         if background:
