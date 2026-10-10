@@ -106,8 +106,9 @@ right word is in the chip's top-5 list.
 ## 3. Natural signing: whole sentences
 
 On the patient view, choose **Natural signing**.
-- Sign the whole sentence at a normal pace, then rest your hands in your lap for about 1 second.
-- If the sentence does not end, press **Done signing**.
+- Tap **Start signing** (or press Space). A 3-2-1 countdown appears over the camera.
+- Sign the whole sentence at a normal pace, then tap **Done** (or press Space).
+- Nothing ends the recording automatically except a 30-second limit. Low signs like STOMACH no longer stop it early.
 - Three English candidates appear. Pick the right one if any, then confirm, **Edit**, or **Retry**.
 
 **What you get:** the three **closest ER phrases** from `data/er_phrases.json`, ranked by the model, plus its own
@@ -215,7 +216,7 @@ Run `python scripts/debug_sign.py --expect HURT` (use the word you meant) and si
 | Symptom | Try |
 |---|---|
 | The camera ring never turns orange | More light on your hands. Move back so both hands are fully in frame. |
-| A sentence never ends | Put your hands fully below the bottom of the image, or press **Done signing**. Raise `REST_LINE` in `.env` (e.g. 0.9) if your lap is visible in the frame. |
+| Natural signing stops too early or too late | It records only between **Start signing** and **Done** (or Space). |
 | Precise mode makes a chip on every small movement | Keep your hands in your lap between signs. |
 | Captions show the signer's own voice | One mic hears everyone. The signer stays silent. |
 | fps well below 30 | Close other heavy apps and keep the Mac plugged in. |

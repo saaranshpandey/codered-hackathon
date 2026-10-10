@@ -11,7 +11,7 @@ from medbridge import metrics
 from medbridge.translate import literal
 
 PATIENT_ACTIONS = {"mode.set", "candidate.pick", "sign.pick", "sign.remove", "draft.edit",
-                   "draft.confirm", "draft.clear", "sign.done"}
+                   "draft.confirm", "draft.clear", "sign.start", "sign.done"}
 DOCTOR_ACTIONS = {"caption.correct", "asr.pause", "asr.resume", "session.end"}
 
 
@@ -30,10 +30,11 @@ def _natural_source(candidate):
 
 
 class Hub:
-    def __init__(self, broadcast, translate, on_mode=None, on_asr_pause=None, on_sign_done=None,
+    def __init__(self, broadcast, translate, on_mode=None, on_asr_pause=None, on_sign_done=None, on_sign_start=None,
                  precise_threshold=0.3, natural_min_score=-1.0, phrase_min_score=-1.5, async_translate=False):
         self.broadcast, self.translate = broadcast, translate
         self.on_mode, self.on_asr_pause, self.on_sign_done = on_mode, on_asr_pause, on_sign_done
+        self.on_sign_start = on_sign_start
         self.precise_threshold, self.natural_min_score = precise_threshold, natural_min_score
         self.phrase_min_score = phrase_min_score
         self.async_translate = async_translate
@@ -175,6 +176,10 @@ class Hub:
                 self._clear_draft()
             elif kind == "draft.clear":
                 self._clear_draft()
+            elif kind == "sign.start":
+                if self.on_sign_start:
+                    self.on_sign_start()
+                return
             elif kind == "sign.done":
                 if self.on_sign_done:
                     self.on_sign_done()

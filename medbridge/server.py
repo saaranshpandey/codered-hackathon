@@ -78,7 +78,7 @@ def start_engines(app, hub):
     natural = NaturalEngine(hub, signer, rest_line=float(_env("REST_LINE", "0.85")))
     vision = Vision(hub, int(_env("CAMERA_INDEX", "0")), {"natural": natural, "precise": precise},
                     mode=hub.state["sign"]["mode"])
-    hub.on_mode, hub.on_sign_done = vision.set_mode, vision.force_end
+    hub.on_mode, hub.on_sign_done, hub.on_sign_start = vision.set_mode, vision.force_end, vision.start_signing
     app.state.vision = vision
     vision.start()
 

@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { Landmarks, SignState } from '../lib/types'
 
@@ -21,15 +21,16 @@ function caption(state: SignState, mode: string) {
     case 'loading': return 'Loading sign models…'
     case 'no_camera': return 'Camera unavailable'
     case 'hands': return 'Hands detected'
-    case 'signing': return mode === 'natural' ? 'Signing — rest your hands to finish' : 'Signing — lower your hands after the sign'
+    case 'signing': return mode === 'natural' ? 'Recording — tap Done when you finish' : 'Signing — lower your hands after the sign'
     case 'translating': return 'Translating your sentence…'
     case 'recognizing': return 'Recognizing sign…'
-    default: return mode === 'natural' ? 'Ready — sign a full sentence' : 'Ready — one sign at a time'
+    default: return mode === 'natural' ? 'Ready — tap Start signing' : 'Ready — one sign at a time'
   }
 }
 
-export function CameraPanel({ landmarks, signState, mode, fps, compact }: {
+export function CameraPanel({ landmarks, signState, mode, fps, compact, countdown }: {
   landmarks: RefObject<Landmarks | null>; signState: SignState; mode: string; fps: number | null; compact: boolean
+  countdown: number | null
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [imgKey, setImgKey] = useState(0)
@@ -107,6 +108,15 @@ export function CameraPanel({ landmarks, signState, mode, fps, compact }: {
             </div>
           </div>
         )}
+        <AnimatePresence>
+          {countdown !== null && (
+            <motion.div key={countdown} className="absolute inset-0 grid place-items-center bg-ink/40"
+              initial={{ opacity: 0, scale: 1.4 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.35 }}>
+              <span className="font-serif text-[120px] leading-none text-bone">{countdown}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {signState === 'translating' && (
           <motion.div className="pointer-events-none absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-amber/20 to-transparent"
             initial={{ x: '-100%' }} animate={{ x: '300%' }} transition={{ duration: 1.3, repeat: Infinity, ease: 'easeInOut' }} />

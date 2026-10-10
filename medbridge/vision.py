@@ -64,6 +64,9 @@ class PreciseEngine:
         if self.seg.state == "idle":
             self.hub.on_sign_status("hands" if hands_active_holistic(arr) else "idle")
 
+    def cancel(self):
+        self.seg.force_end()
+
     def force_end(self):
         clip = self.seg.force_end()
         if clip:
@@ -83,12 +86,15 @@ class PreciseEngine:
 
 
 class NaturalEngine:
+    """Natural signing is recorded between an explicit Start and Done (tap or Space). Hand height is
+    not used to end a sentence: signs like STOMACH are made low in a webcam frame and looked like rest."""
     name = "natural"
+    MIN_FRAMES = 15
+    MAX_FRAMES = 900  # 30 s safety cap; Uni-Sign subsamples long clips to 256 frames itself
 
     def __init__(self, hub, signer, rest_line=0.85, background=True):
         self.hub, self.signer, self.rest_line = hub, signer, rest_line
-        # max_frames is only a runaway guard (30 s): Uni-Sign subsamples long clips to 256 frames itself.
-        self.seg = SignSegmenter(start_frames=3, end_frames=21, preroll=8, postroll=9, min_frames=15, max_frames=900)
+        self.clip = None  # list of poses while recording
         self.background = background
         self.busy = False  # a sentence is being translated; keep showing "translating"
         if background:
@@ -103,24 +109,32 @@ class NaturalEngine:
         hands = [_round(k[0, a:b]) for a, b in ((91, 112), (112, 133)) if s[0, a:b].mean() > 0.4]
         return {"hands": hands, "body": _round(k[0, [0, 5, 6, 7, 8, 9, 10]])}
 
+    def start(self):
+        if self.busy or self.clip is not None:
+            return
+        self.clip = []
+        self.hub.on_sign_status("signing")
+
+    def cancel(self):
+        self.clip = None
+
     def on_pose(self, pose):
-        active = hands_active_rtm(*pose, rest_line=self.rest_line)
-        for ev in self.seg.push(pose, active):
-            if ev[0] == "start":
-                self.hub.on_sign_status("signing")
-            elif ev[0] == "end":
-                self._submit(ev[1])
-            else:
-                self.hub.on_sign_status("idle")
-        if self.seg.state == "idle" and not self.busy:
-            self.hub.on_sign_status("hands" if active else "idle")
+        if self.clip is not None:
+            self.clip.append(pose)
+            if len(self.clip) >= self.MAX_FRAMES:
+                self._finish()
+        elif not self.busy:
+            self.hub.on_sign_status("hands" if hands_active_rtm(*pose, rest_line=self.rest_line) else "idle")
 
     def force_end(self):
-        clip = self.seg.force_end()
-        if clip:
-            self._submit(clip)
+        if self.clip is not None:
+            self._finish()
 
-    def _submit(self, clip):
+    def _finish(self):
+        clip, self.clip = self.clip, None
+        if len(clip) < self.MIN_FRAMES:
+            self.hub.on_sign_status("idle")
+            return
         self.busy = True
         self.hub.on_sign_status("translating")
         if self.background:
@@ -164,6 +178,10 @@ class Vision:
         self._latest, self._seq = None, 0
         self._new_frame = threading.Condition()
         self._force_end = False
+        self._start = False
+
+    def start_signing(self):
+        self._start = True
 
     def set_mode(self, mode):
         self.mode = mode
@@ -201,8 +219,12 @@ class Vision:
                 frame, seen = self._latest, self._seq
             if engine is not self.engines[self.mode]:
                 engine = self.engines[self.mode]
-                engine.seg.force_end()  # drop any half-finished clip from the other mode
+                engine.cancel()  # drop any half-finished clip from the other mode
                 self.hub.on_sign_status("idle")
+            if self._start:
+                self._start = False
+                if hasattr(engine, "start"):
+                    engine.start()
             pose = engine.extract(frame)
             engine.on_pose(pose)
             if self._force_end:

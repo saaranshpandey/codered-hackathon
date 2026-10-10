@@ -196,3 +196,14 @@ def test_low_confidence_uses_top_phrase_score_when_phrases_present():
     assert h.state["natural"]["low_confidence"] is False
     h.on_sentence(with_phrases(2, [("A.", -1.7), ("B.", -1.8), ("C.", -1.9)], [("Free.", -0.1)]))
     assert h.state["natural"]["low_confidence"] is True
+
+
+
+def test_sign_start_from_patient_reaches_vision():
+    from medbridge.hub import Hub
+
+    started = []
+    h = Hub(broadcast=lambda m: None, translate=literal, on_sign_start=lambda: started.append(1))
+    h.apply({"type": "sign.start"}, role="doctor")
+    h.apply({"type": "sign.start"}, role="patient")
+    assert started == [1]

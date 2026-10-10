@@ -10,6 +10,7 @@ type Send = (msg: Record<string, unknown>) => void
 
 export function PatientView() {
   const { state, connected, fps, landmarks, level, send } = useMedbridge('patient')
+  const [countdown, setCountdown] = useState<number | null>(null)
   return (
     <div className="grain flex min-h-full flex-col bg-ink text-bone lg:h-full lg:min-h-[760px]">
       <header className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 lg:px-10 lg:pt-7">
@@ -27,8 +28,9 @@ export function PatientView() {
           </section>
           <section className="flex min-h-0 flex-col gap-5 pb-2 lg:col-span-5 lg:overflow-y-auto">
             <CameraPanel landmarks={landmarks} signState={state.sign.state} mode={state.sign.mode} fps={fps}
-              compact={!!state.natural || state.precise.length > 0} />
+              compact={!!state.natural || state.precise.length > 0} countdown={countdown} />
             <ModeSwitch mode={state.sign.mode} send={send} />
+            {state.sign.mode === 'natural' && <NaturalControl state={state} send={send} countdown={countdown} setCountdown={setCountdown} />}
             {state.sign.mode === 'natural' ? <NaturalReply state={state} send={send} /> : <PreciseReply state={state} send={send} />}
             <Composer state={state} send={send} />
           </section>
@@ -104,18 +106,74 @@ function ModeSwitch({ mode, send }: { mode: string; send: Send }) {
   )
 }
 
-function NaturalReply({ state, send }: { state: State; send: Send }) {
-  const n = state.natural
-  if (!n) {
+/** Natural signing is recorded between an explicit Start (3-2-1 countdown) and Done. Space does the same. */
+function NaturalControl({ state, send, countdown, setCountdown }: {
+  state: State; send: Send; countdown: number | null; setCountdown: (n: number | null) => void
+}) {
+  const signing = state.sign.state === 'signing'
+  const busy = state.sign.state === 'translating' || state.sign.state === 'loading'
+  const [elapsed, setElapsed] = useState(0)
+
+  const start = () => {
+    if (signing || busy || countdown !== null) return
+    let n = 3
+    setCountdown(n)
+    const t = setInterval(() => {
+      n -= 1
+      if (n > 0) { setCountdown(n); return }
+      clearInterval(t)
+      setCountdown(null)
+      send({ type: 'sign.start' })
+    }, 1000)
+  }
+  const done = () => { if (signing) send({ type: 'sign.done' }) }
+
+  useEffect(() => {
+    if (!signing) { setElapsed(0); return }
+    const t0 = Date.now()
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 250)
+    return () => clearInterval(t)
+  }, [signing])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (e.code !== 'Space' || tag === 'TEXTAREA' || tag === 'INPUT') return
+      e.preventDefault()
+      if (signing) done(); else start()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  if (signing) {
     return (
-      <div className="flex items-center justify-between rounded-3xl border border-dashed border-ink-line px-6 py-5">
-        <p className="text-bone/60">Sign your whole sentence, then rest your hands in your lap.</p>
-        {state.sign.state === 'signing' && (
-          <button onClick={() => send({ type: 'sign.done' })} className="eyebrow rounded-full border border-bone/25 px-3 py-2 hover:bg-bone/10">Done signing</button>
-        )}
-      </div>
+      <motion.button onClick={done} whileTap={{ scale: 0.97 }}
+        className="relative flex items-center justify-between overflow-hidden rounded-3xl bg-signal px-7 py-5 text-left text-ink">
+        <motion.span className="absolute inset-0 bg-white/20" animate={{ opacity: [0, 0.6, 0] }} transition={{ duration: 1.6, repeat: Infinity }} />
+        <span className="relative">
+          <span className="block text-[22px] font-bold">Done</span>
+          <span className="text-[14px] opacity-80">Tap or press Space when you finish your sentence</span>
+        </span>
+        <span className="relative font-mono text-[28px]">0:{String(elapsed).padStart(2, '0')}</span>
+      </motion.button>
     )
   }
+  return (
+    <button onClick={start} disabled={busy || countdown !== null}
+      className="flex items-center justify-between rounded-3xl border border-bone/25 bg-ink-raised px-7 py-5 text-left transition-colors hover:border-bone/50 disabled:opacity-40">
+      <span>
+        <span className="block text-[22px] font-bold">{busy ? 'Translating…' : countdown !== null ? 'Get ready…' : 'Start signing'}</span>
+        <span className="text-[14px] text-bone/55">Tap or press Space, sign your sentence, then tap Done</span>
+      </span>
+      <Icon name="hand" size={30} />
+    </button>
+  )
+}
+
+function NaturalReply({ state, send }: { state: State; send: Send }) {
+  const n = state.natural
+  if (!n) return null
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">

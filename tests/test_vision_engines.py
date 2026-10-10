@@ -68,58 +68,8 @@ class FakeSigner:
         return {"candidates": [{"text": f"{len(confs)} frames", "score": -0.5, "rel_score": 1.0}], "latency_ms": 5}
 
 
-def test_natural_engine_translates_sentence_after_rest():
-    from medbridge.vision import NaturalEngine
-
-    hub = HubStub()
-    eng = NaturalEngine(hub, FakeSigner(), background=False)
-    poses = [rtm_pose(0.1, 0.5)] * 5 + [rtm_pose(0.9, 0.5)] * 40 + [rtm_pose(0.1, 0.5)] * 25
-    for k, s in poses:
-        eng.on_pose((k, s))
-    assert len(hub.sentences) == 1
-    assert hub.sentences[0]["seg_id"] >= 1
-    assert "translating" in hub.statuses and hub.statuses[-1] == "idle"
 
 
-def test_natural_engine_force_end_translates_partial_sentence():
-    from medbridge.vision import NaturalEngine
-
-    hub = HubStub()
-    eng = NaturalEngine(hub, FakeSigner(), background=False)
-    for k, s in [rtm_pose(0.9, 0.5)] * 30:
-        eng.on_pose((k, s))
-    eng.force_end()
-    assert len(hub.sentences) == 1
-
-
-def test_hand_blip_without_a_sign_returns_status_to_idle():
-    from medbridge.vision import NaturalEngine
-
-    hub = HubStub()
-    eng = NaturalEngine(hub, FakeSigner(), background=False)
-    for k, s in [rtm_pose(0.9, 0.5)] * 2 + [rtm_pose(0.1, 0.5)] * 3:
-        eng.on_pose((k, s))
-    assert hub.statuses[-1] == "idle"
-
-
-def test_translating_status_is_not_overwritten_while_worker_runs():
-    import threading
-
-    from medbridge.vision import NaturalEngine
-
-    release = threading.Event()
-
-    class SlowSigner(FakeSigner):
-        def translate(self, skeletons, confs):
-            release.wait(5)
-            return super().translate(skeletons, confs)
-
-    hub = HubStub()
-    eng = NaturalEngine(hub, SlowSigner(), background=True)
-    for k, s in [rtm_pose(0.9, 0.5)] * 30 + [rtm_pose(0.1, 0.5)] * 30:
-        eng.on_pose((k, s))
-    assert hub.statuses[-1] == "translating"
-    release.set()
 
 
 class FakeCap:
@@ -166,6 +116,9 @@ class SlowEngine:
     def force_end(self):
         pass
 
+    def cancel(self):
+        pass
+
 
 class StreamHub(HubStub):
     def stream(self, msg):
@@ -188,11 +141,91 @@ def test_vision_processes_latest_frame_without_backlog_at_720p():
     assert set(eng.shapes) == {(720, 1280, 3)}
 
 
-def test_natural_engine_keeps_a_15_second_sentence_in_one_piece():
+
+def test_natural_engine_ignores_signing_until_started():
     from medbridge.vision import NaturalEngine
 
     hub = HubStub()
     eng = NaturalEngine(hub, FakeSigner(), background=False)
-    for k, s in [rtm_pose(0.1, 0.5)] * 5 + [rtm_pose(0.9, 0.5)] * 450 + [rtm_pose(0.1, 0.5)] * 25:
+    for k, s in [rtm_pose(0.9, 0.5)] * 60 + [rtm_pose(0.1, 0.5)] * 40:
         eng.on_pose((k, s))
-    assert len(hub.sentences) == 1  # Uni-Sign subsamples long clips itself; the segmenter must not cut them
+    assert hub.sentences == []
+
+
+def test_natural_engine_records_everything_between_start_and_done():
+    from medbridge.vision import NaturalEngine
+
+    hub = HubStub()
+    eng = NaturalEngine(hub, FakeSigner(), background=False)
+    eng.start()
+    # hands low / undetected mid-sentence (e.g. STOMACH at belly height) must NOT end the recording
+    for k, s in [rtm_pose(0.9, 0.5)] * 20 + [rtm_pose(0.1, 0.95)] * 40 + [rtm_pose(0.9, 0.5)] * 20:
+        eng.on_pose((k, s))
+    assert hub.sentences == [] and hub.statuses[-1] == "signing"
+    eng.force_end()
+    assert len(hub.sentences) == 1
+    assert hub.sentences[0]["candidates"][0]["text"] == "80 frames"
+    assert hub.statuses[-1] == "idle"
+
+
+def test_natural_engine_discards_too_short_recording():
+    from medbridge.vision import NaturalEngine
+
+    hub = HubStub()
+    eng = NaturalEngine(hub, FakeSigner(), background=False)
+    eng.start()
+    for k, s in [rtm_pose(0.9, 0.5)] * 5:
+        eng.on_pose((k, s))
+    eng.force_end()
+    assert hub.sentences == [] and hub.statuses[-1] == "idle"
+
+
+def test_natural_engine_stops_at_30_seconds():
+    from medbridge.vision import NaturalEngine
+
+    hub = HubStub()
+    eng = NaturalEngine(hub, FakeSigner(), background=False)
+    eng.start()
+    for k, s in [rtm_pose(0.9, 0.5)] * 950:
+        eng.on_pose((k, s))
+    assert len(hub.sentences) == 1 and hub.sentences[0]["candidates"][0]["text"] == "900 frames"
+
+
+def test_translating_status_is_kept_while_worker_runs():
+    import threading
+
+    from medbridge.vision import NaturalEngine
+
+    release = threading.Event()
+
+    class SlowSigner(FakeSigner):
+        def translate(self, skeletons, confs):
+            release.wait(5)
+            return super().translate(skeletons, confs)
+
+    hub = HubStub()
+    eng = NaturalEngine(hub, SlowSigner(), background=True)
+    eng.start()
+    for k, s in [rtm_pose(0.9, 0.5)] * 30:
+        eng.on_pose((k, s))
+    eng.force_end()
+    for k, s in [rtm_pose(0.9, 0.5)] * 10:
+        eng.on_pose((k, s))
+    assert hub.statuses[-1] == "translating"
+    release.set()
+
+
+def test_vision_start_signing_reaches_the_active_engine():
+    import time
+
+    from medbridge.vision import Vision
+
+    eng = SlowEngine()
+    eng.started = 0
+    eng.start = lambda: setattr(eng, "started", eng.started + 1)
+    v = Vision(StreamHub(), 0, {"natural": eng}, mode="natural", capture=lambda index: FakeCap())
+    v.start()
+    time.sleep(0.15)
+    v.start_signing()
+    time.sleep(0.2)
+    assert eng.started == 1
