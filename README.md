@@ -196,6 +196,8 @@ medbridge/   server.py hub.py vision.py segmenter.py asr.py translate.py metrics
              unisign/ (trimmed Uni-Sign pose model)  unisign_runner.py
              islr.py  stgcn/ (vendored ASL Citizen ST-GCN, MIT)
 web/         React + Vite + Tailwind + Motion: patient (dark) and clinician (light) views
+             src/theme.css holds every colour, as five themes (classic is the default; cougar, ocean, midnight, sage);
+             add ?theme=NAME to the address to try one, or edit the file and `npm run build`
 scripts/     check_devices, fetch_models, fetch_eval_clips, eval_unisign, eval_islr, eval_asr
 data/        medical_vocab.json, er_phrases.json (everything else here is downloaded and gitignored)
 tests/       pytest suite

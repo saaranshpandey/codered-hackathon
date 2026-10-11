@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
-import { signedWordSpans, wordDiff } from '../lib/text'
+import { signedWordSpans } from '../lib/text'
+import { themeColor } from '../lib/theme'
 import type { SignedWord, State } from '../lib/types'
 import { useMedbridge } from '../lib/useMedbridge'
 import { CameraPanel } from './CameraPanel'
 import { SigningStage } from './SigningStage'
-import { Disclaimer, Icon, StatusPill, Waveform, Wordmark } from './ui'
+import { Icon, StatusPill, Waveform, Wordmark } from './ui'
 
 type Send = (msg: Record<string, unknown>) => void
 
@@ -21,7 +22,7 @@ export function PatientView() {
         <Wordmark role="Patient" tone="dark" />
         <div className="flex items-center gap-5">
           {state && <DoctorMic asr={state.asr.state} />}
-          <Waveform level={level} color="#f2eee6" />
+          <Waveform level={level} color={themeColor('bone')} />
           {!connected && <StatusPill tone="warn" label="Reconnecting" pulse />}
         </div>
       </header>
@@ -50,7 +51,6 @@ export function PatientView() {
       ) : (
         <div className="grid flex-1 place-items-center font-serif text-3xl italic text-bone/50">Connecting…</div>
       )}
-      <Disclaimer tone="dark" />
     </div>
   )
 }
@@ -80,7 +80,7 @@ function Captions({ state, signed }: { state: State; signed: SignedWord | null }
     <div className="flex min-h-0 flex-1 flex-col">
       <motion.div ref={scroller} layoutScroll
         onScroll={(e) => { const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48 }}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pr-2 [scrollbar-color:rgb(242_238_230/0.25)_transparent] [scrollbar-width:thin]">
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pr-2 [scrollbar-color:color-mix(in_srgb,var(--color-bone)_25%,transparent)_transparent] [scrollbar-width:thin]">
         <div className="mt-auto flex flex-col gap-6">
           {captions.length === 0 && !state.interim && (
             <p className="font-serif text-5xl italic leading-tight text-bone/30">The doctor's words will appear here as they speak.</p>
@@ -93,13 +93,12 @@ function Captions({ state, signed }: { state: State; signed: SignedWord | null }
                 <motion.div key={c.id} layout initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
                   animate={{ opacity: latest ? 1 : 0.55, y: 0, filter: 'blur(0px)' }}
                   transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
-                  <div className="eyebrow mb-1.5 flex items-center gap-2.5 text-bone/50">
-                    <time>{clock(c.t)}</time>
-                    {c.original && <span className="rounded-full bg-amber/15 px-2.5 py-1 text-amber">Corrected by doctor</span>}
-                  </div>
+                  <time className="eyebrow mb-1.5 block text-bone/50">{clock(c.t)}</time>
                   <p className={`font-bold leading-[1.12] tracking-[-0.01em] ${latest ? 'text-[clamp(30px,2.6vw,44px)]' : 'text-[clamp(20px,1.6vw,26px)]'}`}>
-                    {wordDiff(c.original, c.text).map((w, k) => (
-                      <span key={k} className={`transition-colors duration-150 ${now.includes(k) ? 'text-signal' : w.changed ? 'text-amber' : ''} ${w.changed ? 'underline decoration-amber/60 decoration-2 underline-offset-8' : ''}`}>{w.word} </span>
+                    {c.text.split(/\s+/).filter(Boolean).map((word, k) => (
+                      <span key={k}>
+                        <span className={`-mx-[0.1em] rounded-[0.18em] px-[0.1em] transition-colors duration-150 ${now.includes(k) ? 'bg-signal' : ''}`}>{word}</span>{' '}
+                      </span>
                     ))}
                   </p>
                 </motion.div>
@@ -241,9 +240,9 @@ function Captions({ state, signed }: { state: State; signed: SignedWord | null }
 function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
   return (
     <button role="switch" aria-checked={on} aria-label={label} onClick={onToggle}
-      className={`eyebrow flex items-center gap-2 transition-colors ${on ? 'text-mint' : 'text-bone/45 hover:text-bone'}`}>
-      <span className={`relative h-[18px] w-8 rounded-full transition-colors ${on ? 'bg-mint' : 'bg-bone/20'}`}>
-        <span className={`absolute top-[3px] h-3 w-3 rounded-full bg-ink transition-[left] ${on ? 'left-[17px]' : 'left-[3px]'}`} />
+      className={`eyebrow flex items-center gap-2 transition-colors ${on ? 'text-bone' : 'text-bone/45 hover:text-bone'}`}>
+      <span className={`relative h-[18px] w-8 rounded-[5px] transition-colors ${on ? 'bg-mint' : 'bg-bone/20'}`}>
+        <span className={`absolute top-[3px] h-3 w-3 rounded-[3px] bg-on-go transition-[left] ${on ? 'left-[17px]' : 'left-[3px]'}`} />
       </span>
       {on ? 'On' : 'Off'}
     </button>
@@ -327,7 +326,7 @@ function Composer({ state, send }: { state: State; send: Send }) {
   const saveEdit = () => { send({ type: 'draft.edit', text }); setEditing(false) }
 
   return (
-    <div className="sticky bottom-0 z-10 mt-auto rounded-3xl border border-ink-line bg-ink-raised p-5 shadow-[0_-24px_40px_-12px_rgb(14_15_12)]">
+    <div className="sticky bottom-0 z-10 mt-auto rounded-3xl border border-ink-line bg-ink-raised p-5 shadow-[0_-24px_40px_-12px_var(--color-ink)]">
       {editing ? (
         <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} rows={2}
           className="w-full resize-none rounded-xl bg-ink px-3 py-2 text-[24px] leading-snug outline-none ring-1 ring-bone/20 focus:ring-mint" />
@@ -338,22 +337,22 @@ function Composer({ state, send }: { state: State; send: Send }) {
       )}
       <div className="mt-4 flex items-center gap-2.5">
         {editing ? (
-          <button onClick={saveEdit} className="flex items-center gap-2 rounded-full border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="check" /> Save</button>
+          <button onClick={saveEdit} className="flex items-center gap-2 rounded-md border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="check" /> Save</button>
         ) : (
-          <button onClick={startEdit} className="flex items-center gap-2 rounded-full border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="edit" /> Edit</button>
+          <button onClick={startEdit} className="flex items-center gap-2 rounded-md border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="edit" /> Edit</button>
         )}
         <button onClick={() => { send({ type: 'draft.clear' }); setEditing(false) }}
-          className="flex items-center gap-2 rounded-full border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="retry" /> Retry</button>
+          className="flex items-center gap-2 rounded-md border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="retry" /> Retry</button>
         <motion.button whileTap={{ scale: 0.96 }} disabled={!draft.text.trim() || editing}
           onClick={() => send({ type: 'draft.confirm' })}
-          className="ml-auto flex items-center gap-2 rounded-full bg-mint px-6 py-3 text-[17px] font-bold text-ink transition-opacity disabled:opacity-25">
+          className="ml-auto flex items-center gap-2 rounded-md bg-mint-deep px-6 py-3 text-[17px] font-bold text-on-go transition-opacity disabled:opacity-25">
           <Icon name="check" /> Confirm &amp; send
         </motion.button>
       </div>
       <AnimatePresence>
         {sent && (
           <motion.p initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="mt-3 flex items-center gap-2 text-[15px] text-mint"><Icon name="check" size={16} /> Sent to the doctor: “{sent}”</motion.p>
+            className="mt-3 flex items-center gap-2 text-[15px] text-bone/80"><Icon name="check" size={16} /> Sent to the doctor: “{sent}”</motion.p>
         )}
       </AnimatePresence>
     </div>

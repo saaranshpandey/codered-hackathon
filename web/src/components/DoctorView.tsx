@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { timeline } from '../lib/text'
+import { themeColor } from '../lib/theme'
 import type { Caption, Message, State } from '../lib/types'
 import { useMedbridge } from '../lib/useMedbridge'
-import { Disclaimer, Icon, StatusPill, Waveform, Wordmark /* , sourceLabel */ } from './ui'
+import { Icon, StatusPill, Waveform, Wordmark /* , sourceLabel */ } from './ui'
 
 type Send = (msg: Record<string, unknown>) => void
 const time = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -19,23 +20,23 @@ export function DoctorView() {
         <Wordmark role="Clinician" tone="light" />
         <div className="flex flex-wrap items-center gap-3 lg:gap-4">
           {state && <AsrPill asr={state.asr.state} />}
-          <Waveform level={level} color="#14150f" />
+          <Waveform level={level} color={themeColor('graphite')} />
           {state && (
             <button onClick={() => send({ type: state.asr.state === 'paused' ? 'asr.resume' : 'asr.pause' })}
-              className="flex items-center gap-2 rounded-full border border-graphite/20 px-4 py-2 text-sm font-bold hover:bg-graphite/5">
+              className="flex items-center gap-2 rounded-md border border-graphite/20 px-4 py-2 text-sm font-bold hover:bg-graphite/5">
               <Icon name={state.asr.state === 'paused' ? 'play' : 'pause'} size={15} />
               {state.asr.state === 'paused' ? 'Resume captions' : 'Pause captions'}
             </button>
           )}
           {speech.on && (
             <button onClick={speech.toggleAuto} role="switch" aria-checked={speech.auto}
-              className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold ${speech.auto ? 'border-graphite bg-graphite text-paper' : 'border-graphite/20 hover:bg-graphite/5'}`}>
+              className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-bold ${speech.auto ? 'border-doctor bg-doctor text-paper' : 'border-graphite/20 hover:bg-graphite/5'}`}>
               <Icon name="speaker" size={15} /> Auto audio {speech.auto ? 'on' : 'off'}
             </button>
           )}
           {state && (
             <button onClick={() => { if (confirm('End the session and clear the conversation from memory?')) send({ type: 'session.end' }) }}
-              className="flex items-center gap-2 rounded-full border border-graphite/20 px-4 py-2 text-sm font-bold hover:bg-graphite/5">
+              className="flex items-center gap-2 rounded-md border border-graphite/20 px-4 py-2 text-sm font-bold hover:bg-graphite/5">
               <Icon name="stop" size={14} /> End session
             </button>
           )}
@@ -55,7 +56,6 @@ export function DoctorView() {
       ) : (
         <div className="grid flex-1 place-items-center font-serif text-3xl italic text-graphite/50">Connecting…</div>
       )}
-      <Disclaimer tone="light" />
     </div>
   )
 }
@@ -156,9 +156,9 @@ function Timeline({ state, send, speak }: { state: State; send: Send; speak: ((i
       <form onSubmit={(e) => { e.preventDefault(); sendTyped() }} className="flex items-center gap-2.5 border-t border-paper-line px-5 py-4">
         <input value={typed} onChange={(e) => setTyped(e.target.value)} maxLength={500} placeholder="Type a message"
           aria-label="Type a message to the patient"
-          className="min-w-0 flex-1 rounded-full border border-graphite/15 bg-paper px-5 py-3 text-[17px] outline-none focus:border-signal/60" />
+          className="min-w-0 flex-1 rounded-md border border-graphite/15 bg-paper px-5 py-3 text-[17px] outline-none focus:border-mint/70" />
         <button type="submit" disabled={!typed.trim()} aria-label="Send"
-          className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-graphite text-paper transition-opacity disabled:opacity-25">
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-doctor text-paper transition-opacity disabled:opacity-25">
           <Icon name="send" />
         </button>
       </form>
@@ -177,12 +177,12 @@ function DoctorLine({ caption, send }: { caption: Caption; send: Send }) {
         <div className="flex items-center gap-2">
           <input autoFocus value={text} onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
-            className="flex-1 rounded-xl border border-signal/50 bg-paper px-3 py-2 text-[18px] outline-none" />
-          <button onClick={save} className="rounded-full bg-graphite px-4 py-2 text-sm font-bold text-paper">Save</button>
+            className="flex-1 rounded-xl border border-mint/60 bg-paper px-3 py-2 text-[18px] outline-none" />
+          <button onClick={save} className="rounded-md bg-doctor px-4 py-2 text-sm font-bold text-paper">Save</button>
         </div>
       ) : (
         <button onClick={() => { setText(caption.text); setEditing(true) }}
-          className="group inline-flex items-start gap-2 rounded-2xl bg-graphite px-5 py-3 text-left text-[19px] leading-snug text-paper">
+          className="group inline-flex items-start gap-2 rounded-2xl bg-doctor px-5 py-3 text-left text-[19px] leading-snug text-paper">
           <span>{caption.text}</span>
           <span className="mt-1 opacity-0 transition-opacity group-hover:opacity-60"><Icon name="edit" size={15} /></span>
         </button>
@@ -195,8 +195,8 @@ function DoctorLine({ caption, send }: { caption: Caption; send: Send }) {
 function PatientLine({ msg, speak }: { msg: Message; speak: ((id: number) => void) | null }) {
   return (
     <motion.div layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      className="max-w-[75%] rounded-2xl border border-mint-deep/25 bg-mint/10 py-3.5 pl-5 pr-6">
-      <p className="eyebrow mb-1.5 flex items-center gap-1.5 text-mint-deep">
+      className="w-fit max-w-[75%] self-start rounded-2xl border border-doctor/20 bg-leaf py-3.5 pl-5 pr-6">
+      <p className="eyebrow mb-1.5 flex items-center gap-1.5 text-doctor">
         <Icon name="check" size={13} /> {time(msg.t)}
         {speak && (
           <button onClick={() => speak(msg.id)} aria-label="Play aloud" className="ml-1 opacity-60 hover:opacity-100">

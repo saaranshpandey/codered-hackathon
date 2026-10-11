@@ -1,19 +1,24 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState, type RefObject } from 'react'
+import { themeColor } from '../lib/theme'
 import type { Landmarks, SignState } from '../lib/types'
 
 const HAND_EDGES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
   [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]]
+const OVER_VIDEO = '#f5f5f0' // body lines and joint dots are drawn over the camera picture, so they stay light in every theme
 const BODY_EDGES = [[1, 2], [1, 3], [3, 5], [2, 4], [4, 6]] // shoulders, elbows, wrists
 
-const RING: Record<SignState, { border: string; glow: string }> = {
-  idle: { border: 'rgb(242 238 230 / 0.12)', glow: '0 0 0 0 rgb(0 0 0 / 0)' },
-  loading: { border: 'rgb(242 238 230 / 0.12)', glow: '0 0 0 0 rgb(0 0 0 / 0)' },
-  no_camera: { border: 'rgb(255 176 32 / 0.6)', glow: '0 0 0 0 rgb(0 0 0 / 0)' },
-  hands: { border: 'rgb(61 220 151 / 0.7)', glow: '0 0 40px -8px rgb(61 220 151 / 0.45)' },
-  signing: { border: 'rgb(255 90 31 / 0.95)', glow: '0 0 64px -6px rgb(255 90 31 / 0.6)' },
-  translating: { border: 'rgb(255 176 32 / 0.9)', glow: '0 0 48px -8px rgb(255 176 32 / 0.5)' },
-  recognizing: { border: 'rgb(255 176 32 / 0.9)', glow: '0 0 48px -8px rgb(255 176 32 / 0.5)' },
+/** The ring around the camera: the accent colour, faint when hands are seen and full while a sign is read. */
+function ring(state: SignState) {
+  const none = '0 0 0 0 rgba(0, 0, 0, 0)'
+  switch (state) {
+    case 'hands': return { border: themeColor('mint', 0.45), glow: `0 0 36px -10px ${themeColor('mint', 0.35)}` }
+    case 'signing': return { border: themeColor('mint', 1), glow: `0 0 56px -6px ${themeColor('mint', 0.7)}` }
+    case 'translating':
+    case 'recognizing': return { border: themeColor('mint', 0.7), glow: `0 0 44px -8px ${themeColor('mint', 0.45)}` }
+    case 'no_camera': return { border: themeColor('amber', 0.7), glow: none }
+    default: return { border: themeColor('bone', 0.14), glow: none }
+  }
 }
 
 function caption(state: SignState, mode: string, enabled: boolean) {
@@ -54,7 +59,7 @@ export function CameraPanel({ landmarks, signState, mode, enabled, fps, compact,
         ctx.clearRect(0, 0, W, H)
         const lm = landmarks.current
         if (lm && performance.now() - lm.at < 500) {
-          const color = signing ? '#ff5a1f' : '#3ddc97'
+          const color = themeColor('mint')
           const seg = (pts: number[][], edges: number[][], width: number, alpha: number) => {
             ctx.globalAlpha = alpha
             ctx.lineWidth = width
@@ -65,14 +70,14 @@ export function CameraPanel({ landmarks, signState, mode, enabled, fps, compact,
             }
           }
           ctx.lineCap = 'round'
-          ctx.strokeStyle = '#f2eee6'
+          ctx.strokeStyle = OVER_VIDEO
           seg(lm.body, BODY_EDGES, 2, 0.35)
           ctx.strokeStyle = color
           ctx.shadowColor = color
           ctx.shadowBlur = 14
           for (const hand of lm.hands) seg(hand, HAND_EDGES, 2.4, 0.95)
           ctx.shadowBlur = 0
-          ctx.fillStyle = '#f2eee6'
+          ctx.fillStyle = OVER_VIDEO
           ctx.globalAlpha = 0.9
           for (const hand of lm.hands) for (const [x, y] of hand) {
             ctx.beginPath(); ctx.arc(x * W, y * H, 2.2, 0, Math.PI * 2); ctx.fill()
@@ -85,13 +90,13 @@ export function CameraPanel({ landmarks, signState, mode, enabled, fps, compact,
     return () => cancelAnimationFrame(raf)
   }, [landmarks, signing])
 
-  const ring = RING[signState] ?? RING.idle
+  const { border, glow } = ring(signState)
   return (
     <motion.div layout className="relative mx-auto w-full" style={{ maxWidth: compact ? 'calc(22vh * 16 / 9)' : 'calc(34vh * 16 / 9)' }}
       transition={{ type: 'spring', stiffness: 260, damping: 32 }}>
       <motion.div
         className="relative aspect-video overflow-hidden rounded-[28px] border-2 bg-ink-raised"
-        animate={{ borderColor: ring.border, boxShadow: ring.glow }}
+        animate={{ borderColor: border, boxShadow: glow }}
         transition={{ duration: 0.35 }}
       >
         {/* Mirrored like a mirror for the signer; the model sees the unmirrored frame. */}

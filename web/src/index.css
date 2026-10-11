@@ -6,22 +6,10 @@
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 
+/* Colours live in theme.css: edit that file to re-colour the app. */
+@import "./theme.css";
+
 @theme {
-  --color-ink: #0e0f0c;
-  --color-ink-raised: #171813;
-  --color-ink-line: rgb(242 238 230 / 0.1);
-  --color-bone: #f2eee6;
-  --color-bone-dim: rgb(242 238 230 / 0.55);
-  --color-paper: #f4f1ea;
-  --color-paper-raised: #fbfaf6;
-  --color-paper-line: rgb(20 21 15 / 0.1);
-  --color-graphite: #14150f;
-  --color-graphite-dim: rgb(20 21 15 / 0.55);
-  --color-signal: #ff5a1f;
-  --color-amber: #ffb020;
-  --color-amber-deep: #9a6206;
-  --color-mint: #3ddc97;
-  --color-mint-deep: #0b7a52;
   --font-sans: "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -40,13 +28,13 @@ body { margin: 0; -webkit-font-smoothing: antialiased; text-rendering: optimizeL
 
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .shimmer {
-  --sh-a: rgb(242 238 230 / 0.5); --sh-b: #f2eee6;
+  --sh-a: color-mix(in srgb, var(--color-bone) 50%, transparent); --sh-b: var(--color-bone);
   background: linear-gradient(90deg, var(--sh-a) 0%, var(--sh-a) 40%, var(--sh-b) 50%, var(--sh-a) 60%, var(--sh-a) 100%);
   background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;
   color: transparent; -webkit-text-fill-color: transparent;
   animation: shimmer 2.6s linear infinite;
 }
-.shimmer-light { --sh-a: rgb(20 21 15 / 0.45); --sh-b: #14150f; }
+.shimmer-light { --sh-a: color-mix(in srgb, var(--color-graphite) 45%, transparent); --sh-b: var(--color-graphite); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }

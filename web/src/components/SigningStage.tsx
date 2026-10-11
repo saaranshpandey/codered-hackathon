@@ -84,12 +84,11 @@ export function SigningStage({ signing, onWord }: { signing: Signing | null; onW
   // Three.js scene: built once, driven every animation frame from motionRef.
   useEffect(() => {
     const el = mount.current!
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }) // see-through: the stage colours are CSS (theme.css)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     el.appendChild(renderer.domElement)
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#17140f')
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50)
     // Glow (bloom) disabled for now:
     // const composer = new EffectComposer(renderer)
@@ -186,19 +185,18 @@ export function SigningStage({ signing, onWord }: { signing: Signing | null; onW
   const noSigns = !!loaded && loaded.words.every((x) => x.source === 'none')
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-ink-line bg-[radial-gradient(ellipse_at_50%_30%,#22231d_0%,#0e0f0c_70%)]">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-ink-line bg-[radial-gradient(ellipse_at_50%_30%,color-mix(in_srgb,var(--color-stage)_78%,white)_0%,var(--color-stage)_80%)]">
       {loaded && !noSigns && (
         <div className="absolute right-6 top-5 z-20 flex items-center gap-2">
-          <button onClick={() => setSpeed((s) => (s === 1 ? 0.6 : 1))} className="eyebrow rounded-full border border-bone/20 px-3 py-1.5 text-bone/70 hover:bg-bone/10">
+          <button onClick={() => setSpeed((s) => (s === 1 ? 0.6 : 1))} className="eyebrow rounded-md border border-bone/20 px-3 py-1.5 text-bone/70 hover:bg-bone/10">
             {speed === 1 ? '1×' : '0.6×'}
           </button>
-          <button onClick={replay} className="flex items-center gap-1.5 rounded-full border border-bone/20 px-3 py-1.5 text-[13px] font-bold hover:bg-bone/10">
+          <button onClick={replay} className="flex items-center gap-1.5 rounded-md border border-bone/20 px-3 py-1.5 text-[13px] font-bold hover:bg-bone/10">
             <Icon name="retry" size={14} /> Replay
           </button>
         </div>
       )}
       <div ref={mount} className="relative min-h-[200px] flex-1 [&>canvas]:block">
-        <div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_center,transparent_45%,#0e0f0c_100%)]" />
         <AnimatePresence>
           {building && (
             <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}

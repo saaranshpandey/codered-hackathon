@@ -1,12 +1,11 @@
 import { useEffect, useRef, type RefObject } from 'react'
 
 export function Wordmark({ role, tone }: { role: string; tone: 'dark' | 'light' }) {
-  const stroke = tone === 'dark' ? '#f2eee6' : '#14150f'
   return (
     <div className="flex items-baseline gap-3 select-none">
       <svg width="30" height="22" viewBox="0 0 30 22" aria-hidden className="translate-y-[3px]">
-        <path d="M2 17C5 6 25 6 28 17" fill="none" stroke="#ff5a1f" strokeWidth="2.6" strokeLinecap="round" />
-        <path d="M2 17v4M28 17v4M15 10v11M8.5 12.5v8.5M21.5 12.5v8.5" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M2 17C5 6 25 6 28 17" fill="none" className="stroke-mint" strokeWidth="2.6" strokeLinecap="round" />
+        <path d="M2 17v4M28 17v4M15 10v11M8.5 12.5v8.5M21.5 12.5v8.5" className={tone === 'dark' ? 'stroke-bone' : 'stroke-graphite'} strokeWidth="1.8" strokeLinecap="round" />
       </svg>
       <span className="font-serif text-[28px] leading-none tracking-tight">
         Med<span className="italic">bridge</span>
@@ -18,12 +17,13 @@ export function Wordmark({ role, tone }: { role: string; tone: 'dark' | 'light' 
 
 type PillTone = 'live' | 'ok' | 'warn' | 'idle'
 const pillDot: Record<PillTone, string> = {
-  live: 'bg-signal', ok: 'bg-mint', warn: 'bg-amber', idle: 'bg-current opacity-40',
+  live: 'bg-mint', ok: 'bg-mint', warn: 'bg-amber', idle: 'bg-current opacity-40', // live differs from ok by its pulse
 }
 
+/** A status line: a small dot and a label. (The name is from when it was drawn as a pill.) */
 export function StatusPill({ tone, label, pulse = false }: { tone: PillTone; label: string; pulse?: boolean }) {
   return (
-    <span className="eyebrow inline-flex items-center gap-2 rounded-full border border-current/15 px-3 py-1.5">
+    <span className="eyebrow inline-flex items-center gap-2">
       <span className="relative flex h-2 w-2">
         {pulse && <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${pillDot[tone]}`} />}
         <span className={`relative inline-flex h-2 w-2 rounded-full ${pillDot[tone]}`} />
@@ -67,14 +67,6 @@ export function Waveform({ level, color, width = 140, height = 28 }: {
     return () => cancelAnimationFrame(raf)
   }, [level, color, width, height])
   return <canvas ref={canvas} style={{ width, height }} aria-label="Doctor microphone level" />
-}
-
-export function Disclaimer({ tone }: { tone: 'dark' | 'light' }) {
-  return (
-    <p className={`eyebrow px-8 py-3 text-center ${tone === 'dark' ? 'text-bone/40' : 'text-graphite/45'}`}>
-      Research prototype · Not a certified medical interpreter · Do not use for clinical decisions
-    </p>
-  )
 }
 
 export function Icon({ name, size = 18 }: { name: 'check' | 'edit' | 'retry' | 'x' | 'hand' | 'mic' | 'pause' | 'play' | 'stop' | 'send' | 'speaker'; size?: number }) {
