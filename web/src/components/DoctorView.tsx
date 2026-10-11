@@ -9,7 +9,7 @@ type Send = (msg: Record<string, unknown>) => void
 const time = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 export function DoctorView() {
-  const { state, connected, fps, level, send } = useMedbridge('doctor')
+  const { state, connected, /* fps, */ level, send } = useMedbridge('doctor')
   return (
     <div className="grain flex min-h-full flex-col bg-paper text-graphite lg:h-full lg:min-h-[760px]">
       <header className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 lg:px-10 lg:pt-7">
@@ -35,7 +35,7 @@ export function DoctorView() {
           {/* Narrow windows: live lane, then conversation, then system (aside dissolves into the grid). */}
           <aside className="contents lg:col-span-4 lg:flex lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-y-auto">
             <div className="order-1 lg:order-none"><LiveLane state={state} /></div>
-            <div className="order-3 lg:order-none"><Readouts state={state} fps={fps} send={send} /></div>
+            <div className="order-3 lg:order-none"><Readouts /* state={state} fps={fps} */ send={send} /></div>
           </aside>
         </main>
       ) : (
@@ -193,17 +193,20 @@ function LiveLane({ state }: { state: State }) {
   )
 }
 
-function Readouts({ state, fps, send }: { state: State; fps: number | null; send: Send }) {
-  const lastPrecise = state.precise[state.precise.length - 1]
-  const rows: [string, string][] = [
-    ['Camera', fps === null ? '—' : `${fps.toFixed(0)} fps`],
-    ['Sentence translation', state.natural?.latency_ms != null ? `${state.natural.latency_ms} ms` : '—'],
-    ['Sign recognition', lastPrecise?.latency_ms != null ? `${lastPrecise.latency_ms} ms` : '—'],
-    ['Confirmed replies', String(state.messages.length)],
-  ]
+// The System readouts (camera fps, latencies, reply count) are disabled for now; only End session is left.
+// To re-enable, restore the commented lines here and the state/fps props where Readouts is used.
+// function Readouts({ state, fps, send }: { state: State; fps: number | null; send: Send }) {
+function Readouts({ send }: { send: Send }) {
+  // const lastPrecise = state.precise[state.precise.length - 1]
+  // const rows: [string, string][] = [
+  //   ['Camera', fps === null ? '—' : `${fps.toFixed(0)} fps`],
+  //   ['Sentence translation', state.natural?.latency_ms != null ? `${state.natural.latency_ms} ms` : '—'],
+  //   ['Sign recognition', lastPrecise?.latency_ms != null ? `${lastPrecise.latency_ms} ms` : '—'],
+  //   ['Confirmed replies', String(state.messages.length)],
+  // ]
   return (
     <div className="rounded-[28px] border border-paper-line bg-paper-raised p-6">
-      <span className="eyebrow text-graphite/50">System</span>
+      {/* <span className="eyebrow text-graphite/50">System</span>
       <dl className="mt-3 divide-y divide-paper-line">
         {rows.map(([k, v]) => (
           <div key={k} className="flex justify-between py-2.5">
@@ -211,9 +214,9 @@ function Readouts({ state, fps, send }: { state: State; fps: number | null; send
             <dd className="font-mono text-[14px]">{v}</dd>
           </div>
         ))}
-      </dl>
+      </dl> */}
       <button onClick={() => { if (confirm('End the session and clear the conversation from memory?')) send({ type: 'session.end' }) }}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-graphite/20 py-2.5 text-sm font-bold hover:bg-graphite/5">
+        className="flex w-full items-center justify-center gap-2 rounded-full border border-graphite/20 py-2.5 text-sm font-bold hover:bg-graphite/5">
         <Icon name="stop" size={14} /> End session
       </button>
     </div>
