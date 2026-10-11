@@ -62,45 +62,61 @@ function DoctorMic({ asr }: { asr: State['asr']['state'] }) {
   return <StatusPill tone="ok" label="Listening to doctor" />
 }
 
+const clock = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+
 function Captions({ state, signed }: { state: State; signed: SignedWord | null }) {
-  const recent = state.captions.slice(-4)
+  const captions = state.captions
+  const newest = captions[captions.length - 1]
   // The caption words the mascot is signing right now are shown in a stronger colour.
   const signing = signed && state.signing?.caption_id === signed.captionId ? state.signing.words : null
+  // The list follows the newest caption unless the patient has scrolled up to read back.
+  const scroller = useRef<HTMLDivElement>(null)
+  const follow = useRef(true)
+  useEffect(() => {
+    const el = scroller.current
+    if (el && follow.current) el.scrollTop = el.scrollHeight
+  }, [captions, state.interim]) // every snapshot: a correction to an older caption can change the height too
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="eyebrow flex items-center gap-3 text-bone/45">
         <span className="h-px w-8 bg-bone/30" /> The doctor said
       </div>
-      <div className="flex min-h-0 flex-1 flex-col justify-end gap-6 overflow-hidden pb-4">
-        {recent.length === 0 && !state.interim && (
-          <p className="font-serif text-5xl italic leading-tight text-bone/30">The doctor's words will appear here as they speak.</p>
-        )}
-        <AnimatePresence initial={false}>
-          {recent.map((c, i) => {
-            const latest = i === recent.length - 1
-            const age = recent.length - 1 - i
-            const now = signing && c.id === signed!.captionId ? signedWordSpans(c.text, signing.map((w) => w.word))[signed!.index] ?? [] : []
-            return (
-              <motion.div key={c.id} layout initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
-                animate={{ opacity: latest ? 1 : Math.max(0.22, 0.6 - age * 0.13), y: 0, filter: 'blur(0px)' }}
-                transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
-                {c.original && <span className="eyebrow mb-2 inline-block rounded-full bg-amber/15 px-2.5 py-1 text-amber">Corrected by doctor</span>}
-                <p className={`font-bold leading-[1.12] tracking-[-0.01em] ${latest ? 'text-[clamp(30px,2.6vw,44px)]' : 'text-[clamp(20px,1.6vw,26px)]'}`}>
-                  {wordDiff(c.original, c.text).map((w, k) => (
-                    <span key={k} className={`transition-colors duration-150 ${now.includes(k) ? 'text-signal' : w.changed ? 'text-amber' : ''} ${w.changed ? 'underline decoration-amber/60 decoration-2 underline-offset-8' : ''}`}>{w.word} </span>
-                  ))}
-                </p>
-              </motion.div>
-            )
-          })}
-          {state.interim && (
-            <motion.p key={`interim-${state.interim.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="shimmer text-[clamp(30px,2.6vw,44px)] font-bold leading-[1.12]">
-              {state.interim.text}
-            </motion.p>
+      <motion.div ref={scroller} layoutScroll
+        onScroll={(e) => { const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48 }}
+        className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pr-2 [scrollbar-color:rgb(242_238_230/0.25)_transparent] [scrollbar-width:thin]">
+        <div className="mt-auto flex flex-col gap-6">
+          {captions.length === 0 && !state.interim && (
+            <p className="font-serif text-5xl italic leading-tight text-bone/30">The doctor's words will appear here as they speak.</p>
           )}
-        </AnimatePresence>
-      </div>
+          <AnimatePresence initial={false}>
+            {captions.map((c) => {
+              const latest = c === newest
+              const now = signing && c.id === signed!.captionId ? signedWordSpans(c.text, signing.map((w) => w.word))[signed!.index] ?? [] : []
+              return (
+                <motion.div key={c.id} layout initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
+                  animate={{ opacity: latest ? 1 : 0.55, y: 0, filter: 'blur(0px)' }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 30 }}>
+                  <div className="eyebrow mb-1.5 flex items-center gap-2.5 text-bone/50">
+                    <time>{clock(c.t)}</time>
+                    {c.original && <span className="rounded-full bg-amber/15 px-2.5 py-1 text-amber">Corrected by doctor</span>}
+                  </div>
+                  <p className={`font-bold leading-[1.12] tracking-[-0.01em] ${latest ? 'text-[clamp(30px,2.6vw,44px)]' : 'text-[clamp(20px,1.6vw,26px)]'}`}>
+                    {wordDiff(c.original, c.text).map((w, k) => (
+                      <span key={k} className={`transition-colors duration-150 ${now.includes(k) ? 'text-signal' : w.changed ? 'text-amber' : ''} ${w.changed ? 'underline decoration-amber/60 decoration-2 underline-offset-8' : ''}`}>{w.word} </span>
+                    ))}
+                  </p>
+                </motion.div>
+              )
+            })}
+            {state.interim && (
+              <motion.p key={`interim-${state.interim.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="shimmer text-[clamp(30px,2.6vw,44px)] font-bold leading-[1.12]">
+                {state.interim.text}
+              </motion.p>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.div>
     </div>
   )
 }
@@ -241,9 +257,6 @@ function PreciseReply({ state, send }: { state: State; send: Send }) {
   // The sign chips are disabled for now: recognized signs go straight into "Your message to the doctor".
   // To re-enable, restore the commented lines in this component and the `compact` value on CameraPanel above.
   // const [open, setOpen] = useState<number | null>(null)
-  const [vocab, setVocab] = useState<string[] | null>(null)
-  const [showVocab, setShowVocab] = useState(false)
-  useEffect(() => { fetch('/api/vocab').then((r) => r.json()).then(setVocab).catch(() => setVocab([])) }, [])
   // const openItem = state.precise.find((i) => i.seg_id === open)
   const on = state.sign.enabled !== false // a server from before the switch existed sends no value: treat as on
   return (
@@ -253,9 +266,6 @@ function PreciseReply({ state, send }: { state: State; send: Send }) {
           <span className="eyebrow text-bone/45">Sign recognition</span>
           <Switch on={on} label="Sign recognition" onToggle={() => send({ type: 'sign.enable', on: !on })} />
         </span>
-        <button onClick={() => setShowVocab((v) => !v)} className="eyebrow text-bone/45 hover:text-bone">
-          Signs I can recognize {vocab ? `(${vocab.length})` : ''}
-        </button>
       </div>
       {/* Hint box and sign chips (one per recognized sign, with a confidence bar, a remove button and a top-5 picker).
       {state.precise.length === 0 ? (
@@ -296,15 +306,6 @@ function PreciseReply({ state, send }: { state: State; send: Send }) {
         )}
       </AnimatePresence>
       */}
-      <AnimatePresence>
-        {showVocab && vocab && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="mt-3 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-2xl border border-ink-line p-3">
-              {vocab.map((v) => <span key={v} className="rounded-full bg-bone/8 px-2.5 py-1 text-[13px] text-bone/75">{v}</span>)}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }
