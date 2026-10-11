@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { timeline } from '../lib/text'
 import type { Caption, Message, State } from '../lib/types'
 import { useMedbridge } from '../lib/useMedbridge'
-import { Disclaimer, Icon, StatusPill, Waveform, Wordmark, sourceLabel } from './ui'
+import { Disclaimer, Icon, StatusPill, Waveform, Wordmark /* , sourceLabel */ } from './ui'
 
 type Send = (msg: Record<string, unknown>) => void
 const time = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -32,9 +32,8 @@ export function DoctorView() {
           <section className="order-2 flex min-h-[55vh] flex-col lg:order-none lg:col-span-8 lg:min-h-0">
             <Timeline state={state} send={send} />
           </section>
-          {/* Narrow windows: live lane, then conversation, then system (aside dissolves into the grid). */}
+          {/* Narrow windows: conversation, then End session (aside dissolves into the grid). */}
           <aside className="contents lg:col-span-4 lg:flex lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-y-auto">
-            <div className="order-1 lg:order-none"><LiveLane state={state} /></div>
             <div className="order-3 lg:order-none"><Readouts /* state={state} fps={fps} */ send={send} /></div>
           </aside>
         </main>
@@ -133,63 +132,15 @@ function PatientLine({ msg }: { msg: Message }) {
     <motion.div layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
       className="max-w-[75%] rounded-2xl border border-mint-deep/25 bg-mint/10 py-3.5 pl-5 pr-6">
       <p className="eyebrow mb-1.5 flex items-center gap-1.5 text-mint-deep">
-        <Icon name="check" size={13} /> Confirmed by patient · {time(msg.t)}
+        <Icon name="check" size={13} /> {time(msg.t)}
       </p>
       <p className="text-[24px] font-bold leading-snug">{msg.text}</p>
+      {/* Only the final text is shown for now; this line gave the source and the signs behind it.
       <p className="eyebrow mt-2 text-graphite/45">
         {sourceLabel[msg.source] ?? msg.source}{msg.edited ? ' · edited by patient' : ''}
         {msg.glosses.length > 0 && ` · signs: ${msg.glosses.join(' · ')}`}
-      </p>
+      </p> */}
     </motion.div>
-  )
-}
-
-const signStateLabel: Record<string, string> = {
-  idle: 'Waiting', hands: 'Hands raised', signing: 'Signing…', translating: 'Translating…', recognizing: 'Recognizing…',
-  loading: 'Loading models…', no_camera: 'Camera unavailable',
-}
-
-function LiveLane({ state }: { state: State }) {
-  const n = state.natural
-  const active = ['signing', 'translating', 'recognizing'].includes(state.sign.state)
-  return (
-    <div className="rounded-[28px] border border-paper-line bg-paper-raised p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <span className="eyebrow text-graphite/50">Live from patient</span>
-        <StatusPill tone={active ? 'live' : state.sign.state === 'no_camera' ? 'warn' : 'idle'}
-          label={state.sign.enabled === false ? 'Sign recognition off' : signStateLabel[state.sign.state] ?? state.sign.state} pulse={active} />
-      </div>
-      <p className="eyebrow mb-3 text-graphite/40">Mode · {state.sign.mode === 'natural' ? 'natural signing' : 'one sign at a time'}</p>
-      {n || state.precise.length > 0 || state.draft.text ? (
-        <div className="rounded-2xl border-2 border-dashed border-amber/70 bg-amber/8 p-4">
-          <p className="eyebrow mb-3 text-amber-deep">Unconfirmed AI output — not yet confirmed by patient</p>
-          {n && (
-            <ul className="flex flex-col gap-2">
-              {n.candidates.map((c, i) => (
-                <li key={i} className={`flex items-baseline justify-between gap-3 ${n.selected === i ? 'font-bold' : 'text-graphite/55'}`}>
-                  <span className="text-[16px] leading-snug">{n.selected === i ? '▸ ' : ''}{c.text}
-                    <span className="eyebrow ml-2 text-graphite/40">{c.kind === 'free' ? 'free' : 'phrase'}</span></span>
-                  <span className="font-mono text-xs text-graphite/45">{Math.round(c.rel_score * 100)}%</span>
-                </li>
-              ))}
-              {n.low_confidence && <li className="text-sm font-bold text-amber-deep">Model confidence is low for this sentence.</li>}
-            </ul>
-          )}
-          {state.precise.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {state.precise.map((p) => (
-                <span key={p.seg_id} className={`rounded-full px-3 py-1 text-sm font-bold ${p.uncertain ? 'border border-dashed border-amber-deep text-amber-deep' : 'bg-graphite/8'}`}>
-                  {p.chosen ?? '?'} <span className="font-mono text-xs font-normal opacity-60">{Math.round((p.topk[0]?.p ?? 0) * 100)}%</span>
-                </span>
-              ))}
-            </div>
-          )}
-          {state.draft.text && !n && <p className="mt-3 text-[17px] italic">“{state.draft.text}”</p>}
-        </div>
-      ) : (
-        <p className="text-graphite/45">Nothing pending. Confirmed replies appear in the conversation.</p>
-      )}
-    </div>
   )
 }
 
