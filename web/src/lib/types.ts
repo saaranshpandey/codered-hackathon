@@ -19,4 +19,6 @@ export type Signing = {
   caption_id: number; status: 'building' | 'ready' | 'empty' | 'error'; frames: number; fps: number
   words: { word: string; gloss: string | null; source: 'aslc' | 'signmt' | 'none'; start: number; end: number }[] | null
 }
-export type Landmarks = { mode: string; hands: number[][][]; body: number[][]; at: number }
+/** The word of a caption that the mascot is signing right now: an index into that caption's `Signing.words`. */
+export type SignedWord = { captionId: number; index: number }
+export type Landmarks ={ mode: string; hands: number[][][]; body: number[][]; at: number }

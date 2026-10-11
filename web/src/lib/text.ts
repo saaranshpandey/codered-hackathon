@@ -24,7 +24,28 @@ export function wordDiff(original: string | null, corrected: string) {
   return out
 }
 
-export type TimelineEntry = { kind: 'doctor'; item: Caption } | { kind: 'patient'; item: Message }
+/**
+ * For each signed word, in order, the indices of the caption's whitespace-separated words it covers.
+ * Signed words come from the backend (medbridge/text2sign.py, text_to_glosses): lower-case runs of [a-z0-9'],
+ * with unsigned words like "the" left out and pairs like "thank you" joined into one entry.
+ */
+export function signedWordSpans(text: string, signed: string[]) {
+  const parts = text.split(/\s+/).filter(Boolean).flatMap((word, index) =>
+    (word.toLowerCase().match(/[a-z0-9']+/g) ?? []).map((part) => ({ index, part: part.replace(/^'+|'+$/g, '') })))
+  let from = 0
+  return signed.map((word) => {
+    const span: number[] = []
+    for (const piece of word.split(' ')) {
+      const at = parts.findIndex((p, k) => k >= from && p.part === piece)
+      if (at < 0) continue
+      from = at + 1
+      if (!span.includes(parts[at].index)) span.push(parts[at].index)
+    }
+    return span
+  })
+}
+
+export type TimelineEntry ={ kind: 'doctor'; item: Caption } | { kind: 'patient'; item: Message }
 
 export function timeline(captions: Caption[], messages: Message[]): TimelineEntry[] {
   const entries: TimelineEntry[] = [

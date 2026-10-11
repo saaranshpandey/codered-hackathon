@@ -7,14 +7,14 @@ import * as THREE from 'three'
 // import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 // import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { createCougar } from '../lib/cougar'
-import type { Signing } from '../lib/types'
+import type { SignedWord, Signing } from '../lib/types'
 import { Icon } from './ui'
 
 // Motion layout from the backend (medbridge/text2sign.py): 178 points x (x, y, z), image axes, shoulder width = 1.
 const P = 178
 const DEPTH = 0.22 // MediaPipe depth is noisy and exaggerated; compress it for display
 const SMOOTH = 0.55 // per-frame smoothing of landmark jitter (1 = none)
-type Motion = { fps: number; frames: number; data: Float32Array; words: NonNullable<Signing['words']> }
+type Motion = { captionId: number; fps: number; frames: number; data: Float32Array; words: NonNullable<Signing['words']> }
 
 function decode(b64: string) {
   const bin = atob(b64)
@@ -23,17 +23,11 @@ function decode(b64: string) {
   return new Float32Array(bytes.buffer)
 }
 
-const SOURCE: Record<string, { dot: string; label: string }> = {
-  aslc: { dot: 'bg-mint', label: 'Deaf signer (ASL Citizen)' },
-  signmt: { dot: 'bg-amber', label: 'sign.mt' },
-  none: { dot: 'border border-dashed border-bone/50', label: 'text only' },
-}
-
-export function SigningStage({ signing }: { signing: Signing | null }) {
+/** `onWord` reports the caption word being signed right now (null when none); pass a stable function. */
+export function SigningStage({ signing, onWord }: { signing: Signing | null; onWord: (word: SignedWord | null) => void }) {
   const mount = useRef<HTMLDivElement>(null)
   const motionRef = useRef<Motion | null>(null)
   const clock = useRef({ t: 0, playing: false, speed: 1 })
-  const [word, setWord] = useState(-1)
   const [speed, setSpeed] = useState(1)
   const [loaded, setLoaded] = useState<Motion | null>(null)
 
@@ -43,7 +37,7 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
     let cancelled = false
     fetch(`/api/signing/${signing.caption_id}`).then((r) => (r.ok ? r.json() : null)).then((body) => {
       if (!body || cancelled) return
-      const m: Motion = { fps: body.fps, frames: body.frames, data: decode(body.data), words: body.words }
+      const m: Motion = { captionId: body.caption_id, fps: body.fps, frames: body.frames, data: decode(body.data), words: body.words }
       motionRef.current = m
       clock.current = { t: 0, playing: true, speed: clock.current.speed }
       setLoaded(m)
@@ -114,7 +108,7 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
 
     // ?frame=N freezes the animation on one frame (for checking the rendering).
     const pinned = Number(new URLSearchParams(location.search).get('frame') ?? NaN)
-    let raf = 0, last = performance.now(), wall = 0, shownWord = -1, lastFrame = -1
+    let raf = 0, last = performance.now(), wall = 0, shownWord = '', lastFrame = -1
     const tick = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now; wall += dt
@@ -130,13 +124,18 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
       }
       const vis = fi >= 0
       cougar.setVisible(vis)
-      shadow.visible = vis
       if (vis && fi !== lastFrame) {
         lastFrame = fi
         cougar.update(getter(m!.data, fi * P * 3))
-        const wi = m!.words.findIndex((x) => fi >= x.start && fi < x.end)
-        if (wi !== shownWord) { shownWord = wi; setWord(wi) }
       }
+      shadow.visible = cougar.visible
+      // The word being signed, for the caption highlight. The move into a sign counts as that sign, so the highlight
+      // does not blink between words. None after the last frame, or while a word without a sign is held.
+      const signingNow = vis && (Number.isFinite(pinned) || (c.playing && c.t * m!.fps < m!.frames))
+      const next = signingNow ? m!.words.findIndex((x) => fi < x.end) : -1
+      const wi = next >= 0 && m!.words[next].source !== 'none' ? next : -1
+      const key = wi < 0 ? '' : `${m!.captionId}:${wi}`
+      if (key !== shownWord) { shownWord = key; onWord(wi < 0 ? null : { captionId: m!.captionId, index: wi }) }
       const yaw = reduce ? 0 : Math.sin(wall * 0.18) * 0.3
       camera.position.set(Math.sin(yaw) * 4.6, 0.35, Math.cos(yaw) * 4.6)
       camera.lookAt(0, 0.1, 0)
@@ -144,12 +143,12 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); el.removeChild(renderer.domElement) }
-  }, [])
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); el.removeChild(renderer.domElement); onWord(null) }
+  }, [onWord])
 
   const replay = () => { clock.current.t = 0; clock.current.playing = true }
-  const words = loaded?.words ?? []
   const building = signing?.status === 'building'
+  const noSigns = !!loaded && loaded.words.every((x) => x.source === 'none')
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-ink-line bg-[radial-gradient(ellipse_at_50%_30%,#22231d_0%,#0e0f0c_70%)]">
@@ -158,7 +157,7 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
           <span className="eyebrow text-bone/45">The doctor's words, signed</span>
           <p className="mt-1 text-[12px] text-bone/35">Word-by-word preview · not full ASL grammar · captions below are the reference</p>
         </div>
-        {loaded && (
+        {loaded && !noSigns && (
           <div className="flex items-center gap-2">
             <button onClick={() => setSpeed((s) => (s === 1 ? 0.6 : 1))} className="eyebrow rounded-full border border-bone/20 px-3 py-1.5 text-bone/70 hover:bg-bone/10">
               {speed === 1 ? '1×' : '0.6×'}
@@ -177,25 +176,12 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
               className="shimmer absolute inset-x-0 bottom-4 text-center text-[15px] font-bold">Preparing signs…</motion.p>
           )}
         </AnimatePresence>
-        {!loaded && !building && (
+        {(!loaded || noSigns) && !building && (
           <p className="absolute inset-0 z-20 grid place-items-center px-10 text-center font-serif text-2xl italic text-bone/30">
-            When the doctor speaks, their words are signed here.
+            {noSigns ? 'No signs for these words. Please read the caption below.' : 'When the doctor speaks, their words are signed here.'}
           </p>
         )}
       </div>
-      {words.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-6 pb-5">
-          {words.map((x, i) => (
-            <span key={i} title={SOURCE[x.source]?.label}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[14px] transition-colors ${i === word ? 'bg-bone text-ink' : 'bg-bone/8 text-bone/70'}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${SOURCE[x.source]?.dot}`} />{x.word}
-            </span>
-          ))}
-          <span className="eyebrow ml-auto flex gap-3 text-bone/30">
-            {Object.entries(SOURCE).map(([k, s]) => <span key={k} className="flex items-center gap-1"><span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />{s.label}</span>)}
-          </span>
-        </div>
-      )}
     </div>
   )
 }
