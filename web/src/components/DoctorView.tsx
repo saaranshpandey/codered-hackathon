@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { timeline } from '../lib/text'
 import type { Caption, Message, State } from '../lib/types'
 import { useMedbridge } from '../lib/useMedbridge'
@@ -8,8 +8,11 @@ import { Disclaimer, Icon, StatusPill, Waveform, Wordmark /* , sourceLabel */ } 
 type Send = (msg: Record<string, unknown>) => void
 const time = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
+const NO_MESSAGES: Message[] = []
+
 export function DoctorView() {
   const { state, connected, /* fps, */ level, send } = useMedbridge('doctor')
+  const speech = useSpeech(state?.messages ?? NO_MESSAGES)
   return (
     <div className="grain flex min-h-full flex-col bg-paper text-graphite lg:h-full lg:min-h-[760px]">
       <header className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 lg:px-10 lg:pt-7">
@@ -24,6 +27,12 @@ export function DoctorView() {
               {state.asr.state === 'paused' ? 'Resume captions' : 'Pause captions'}
             </button>
           )}
+          {speech.on && (
+            <button onClick={speech.toggleAuto} role="switch" aria-checked={speech.auto}
+              className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold ${speech.auto ? 'border-graphite bg-graphite text-paper' : 'border-graphite/20 hover:bg-graphite/5'}`}>
+              <Icon name="speaker" size={15} /> Auto audio {speech.auto ? 'on' : 'off'}
+            </button>
+          )}
           {state && (
             <button onClick={() => { if (confirm('End the session and clear the conversation from memory?')) send({ type: 'session.end' }) }}
               className="flex items-center gap-2 rounded-full border border-graphite/20 px-4 py-2 text-sm font-bold hover:bg-graphite/5">
@@ -36,7 +45,7 @@ export function DoctorView() {
       {state ? (
         <main className="flex min-h-0 flex-1 flex-col px-5 py-5 lg:px-10 lg:py-7">
           <section className="flex min-h-[55vh] flex-1 flex-col lg:min-h-0">
-            <Timeline state={state} send={send} />
+            <Timeline state={state} send={send} speak={speech.on ? speech.play : null} />
           </section>
           {/* The side column (System readouts) is disabled for now; the conversation takes the full width.
           <aside className="contents lg:col-span-4 lg:flex lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-y-auto">
@@ -58,7 +67,57 @@ function AsrPill({ asr }: { asr: State['asr']['state'] }) {
   return <StatusPill tone="ok" label="Listening" />
 }
 
-function Timeline({ state, send }: { state: State; send: Send }) {
+const AUTO_AUDIO = 'medbridge.autoAudio' // this browser's "Auto audio" choice
+
+/**
+ * The patient's voice, when the server has one (ELEVENLABS_API_KEY). With "Auto audio" on, each confirmed patient
+ * message that arrives while this page is open is spoken as soon as it arrives, one at a time; `play` speaks one
+ * on request. Each play is fetched from the server, which mutes the microphone meanwhile.
+ */
+function useSpeech(messages: Message[]) {
+  const [on, setOn] = useState(false)
+  const [auto, setAuto] = useState(() => { try { return localStorage.getItem(AUTO_AUDIO) !== 'off' } catch { return true } })
+  const handled = useRef<number | null>(null) // id of the newest message already spoken or skipped
+  const missed = useRef<number | null>(null)  // a message the browser would not let us play
+  const queue = useRef(Promise.resolve())
+  useEffect(() => {
+    fetch('/api/config').then((r) => (r.ok ? r.json() : null)).then((c) => setOn(!!c?.speech)).catch(() => {})
+  }, [])
+  const play = useCallback((id: number, automatic = false) => {
+    queue.current = queue.current.then(async () => {
+      try {
+        const r = await fetch(`/api/speech/${id}`)
+        if (!r.ok) return
+        const url = URL.createObjectURL(await r.blob())
+        const audio = new Audio(url)
+        await new Promise<void>((done) => {
+          audio.onended = audio.onerror = () => done()
+          audio.play().catch((e) => {
+            // A page that has not been clicked yet may not play sound. Show "Auto audio" as off: turning it on is the click.
+            if (automatic && e?.name === 'NotAllowedError') { missed.current = id; setAuto(false) }
+            done()
+          })
+        })
+        URL.revokeObjectURL(url)
+      } catch { /* no audio for this one */ }
+    })
+  }, [])
+  useEffect(() => {
+    const newest = messages.length ? messages[messages.length - 1].id : 0
+    if (handled.current !== null && on && auto) for (const m of messages) if (m.id > handled.current) play(m.id, true)
+    handled.current = Math.max(handled.current ?? 0, newest)
+  }, [messages, on, auto, play])
+  const toggleAuto = () => {
+    const next = !auto
+    setAuto(next)
+    try { localStorage.setItem(AUTO_AUDIO, next ? 'on' : 'off') } catch { /* the choice lasts until reload */ }
+    if (next && missed.current !== null) play(missed.current)
+    missed.current = null
+  }
+  return { on, auto, toggleAuto, play: (id: number) => play(id) }
+}
+
+function Timeline({ state, send, speak }: { state: State; send: Send; speak: ((id: number) => void) | null }) {
   const scroller = useRef<HTMLDivElement>(null)
   const entries = timeline(state.captions, state.messages)
   const [typed, setTyped] = useState('')
@@ -72,10 +131,10 @@ function Timeline({ state, send }: { state: State; send: Send }) {
   }, [entries.length, state.interim?.text])
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-paper-line bg-paper-raised">
-      <div className="flex items-center justify-between border-b border-paper-line px-7 py-4">
+      {/* <div className="flex items-center justify-between border-b border-paper-line px-7 py-4">
         <span className="eyebrow text-graphite/50">Conversation</span>
         <span className="eyebrow text-graphite/40">Click your caption to correct it</span>
-      </div>
+      </div> */}
       <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-7 py-6">
         {entries.length === 0 && !state.interim && (
           <p className="m-auto max-w-md text-center font-serif text-3xl italic leading-snug text-graphite/35">
@@ -85,7 +144,7 @@ function Timeline({ state, send }: { state: State; send: Send }) {
         <AnimatePresence initial={false}>
           {entries.map((e) => e.kind === 'doctor'
             ? <DoctorLine key={`d${e.item.id}`} caption={e.item} send={send} />
-            : <PatientLine key={`p${e.item.id}`} msg={e.item} />)}
+            : <PatientLine key={`p${e.item.id}`} msg={e.item} speak={speak} />)}
         </AnimatePresence>
         {state.interim && (
           <div className="ml-auto max-w-[75%] text-right">
@@ -133,12 +192,17 @@ function DoctorLine({ caption, send }: { caption: Caption; send: Send }) {
   )
 }
 
-function PatientLine({ msg }: { msg: Message }) {
+function PatientLine({ msg, speak }: { msg: Message; speak: ((id: number) => void) | null }) {
   return (
     <motion.div layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
       className="max-w-[75%] rounded-2xl border border-mint-deep/25 bg-mint/10 py-3.5 pl-5 pr-6">
       <p className="eyebrow mb-1.5 flex items-center gap-1.5 text-mint-deep">
         <Icon name="check" size={13} /> {time(msg.t)}
+        {speak && (
+          <button onClick={() => speak(msg.id)} aria-label="Play aloud" className="ml-1 opacity-60 hover:opacity-100">
+            <Icon name="speaker" size={15} />
+          </button>
+        )}
       </p>
       <p className="text-[24px] font-bold leading-snug">{msg.text}</p>
       {/* Only the final text is shown for now; this line gave the source and the signs behind it.

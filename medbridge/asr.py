@@ -117,10 +117,15 @@ class MicAsr:
         self.backlog_blocks = backlog_blocks
         self.queue = queue.Queue()
         self.paused = False
+        self.muted_until = 0.0
         self.running = False
 
+    def mute_for(self, seconds):
+        """Ignore the microphone for a while: the app is about to play sound that must not be captioned."""
+        self.muted_until = max(self.muted_until, time.monotonic() + seconds)
+
     def _callback(self, indata, frames, time_info, status):
-        if self.paused:
+        if self.paused or time.monotonic() < self.muted_until:
             return
         block = indata[:, 0].copy()
         self.queue.put(block)

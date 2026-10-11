@@ -30,3 +30,17 @@ def test_paused_mic_drops_audio():
     mic.paused = True
     mic._callback(np.ones((512, 1), np.float32), 512, None, None)
     assert mic.queue.empty()
+
+
+def test_muted_mic_drops_audio_until_the_mute_runs_out():
+    import time
+
+    from medbridge.asr import MicAsr
+
+    mic = MicAsr(RecordingPipeline())
+    mic.mute_for(0.15)
+    mic._callback(np.ones((512, 1), np.float32), 512, None, None)
+    assert mic.queue.empty()
+    time.sleep(0.2)
+    mic._callback(np.ones((512, 1), np.float32), 512, None, None)
+    assert mic.queue.qsize() == 1

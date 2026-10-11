@@ -77,7 +77,7 @@ export function Disclaimer({ tone }: { tone: 'dark' | 'light' }) {
   )
 }
 
-export function Icon({ name, size = 18 }: { name: 'check' | 'edit' | 'retry' | 'x' | 'hand' | 'mic' | 'pause' | 'play' | 'stop' | 'send'; size?: number }) {
+export function Icon({ name, size = 18 }: { name: 'check' | 'edit' | 'retry' | 'x' | 'hand' | 'mic' | 'pause' | 'play' | 'stop' | 'send' | 'speaker'; size?: number }) {
   const paths: Record<string, string> = {
     check: 'M4 12.5l5 5L20 6.5',
     edit: 'M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4',
@@ -89,6 +89,7 @@ export function Icon({ name, size = 18 }: { name: 'check' | 'edit' | 'retry' | '
     play: 'M7 5l12 7-12 7V5z',
     stop: 'M6 6h12v12H6z',
     send: 'M5 12h14M13 6l6 6-6 6',
+    speaker: 'M4 9.5v5h3.5L12 18V6L7.5 9.5H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11',
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"

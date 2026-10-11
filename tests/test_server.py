@@ -88,6 +88,52 @@ def test_patient_controls_and_camera_are_local_only_by_default():
             assert ws.receive_json()["type"] == "state"
 
 
+def test_confirmed_patient_message_is_spoken_once_and_the_mic_is_muted_while_it_plays():
+    from medbridge.server import create_app
+
+    class FakeVoice:
+        calls = []
+
+        def speak(self, text):
+            self.calls.append(text)
+            return b"x" * 32_000                     # 2.0 s of 128 kbit/s mp3
+
+    app = create_app(engines=False, patient_local_only=False, voice=FakeVoice())
+    muted = []
+    app.state.mute_mic = muted.append
+    with TestClient(app) as c:
+        assert c.get("/api/config").json() == {"speech": True}
+        hub = app.state.hub
+        hub.apply({"type": "draft.edit", "text": "Heart hurt."}, role="patient")
+        hub.apply({"type": "draft.confirm"}, role="patient")
+        mid = hub.state["messages"][0]["id"]
+        r = c.get(f"/api/speech/{mid}")
+        assert r.status_code == 200 and r.headers["content-type"] == "audio/mpeg" and len(r.content) == 32_000
+        assert c.get(f"/api/speech/{mid}").status_code == 200        # played again
+        assert FakeVoice.calls == ["Heart hurt."]                    # ...without asking the service twice
+        assert muted == [pytest.approx(3.0), pytest.approx(3.0)]     # clip length plus a second, each time it plays
+        assert c.get("/api/speech/999").status_code == 404
+
+
+def test_speech_is_off_without_a_voice_and_a_service_failure_is_a_502():
+    from medbridge.server import create_app
+
+    off = create_app(engines=False, patient_local_only=False)
+    with TestClient(off) as c:
+        assert c.get("/api/config").json() == {"speech": False}
+        assert c.get("/api/speech/1").status_code == 404
+
+    class BrokenVoice:
+        def speak(self, text):
+            raise OSError("quota exceeded")
+
+    app = create_app(engines=False, patient_local_only=False, voice=BrokenVoice())
+    with TestClient(app) as c:
+        app.state.hub.apply({"type": "draft.edit", "text": "Help."}, role="patient")
+        app.state.hub.apply({"type": "draft.confirm"}, role="patient")
+        assert c.get(f"/api/speech/{app.state.hub.state['messages'][0]['id']}").status_code == 502
+
+
 def test_long_caption_motion_is_served_in_batches_as_it_is_built():
     import time
 

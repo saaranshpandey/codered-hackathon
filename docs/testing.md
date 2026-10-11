@@ -94,6 +94,9 @@ On the patient view, choose **One sign at a time**. For each row:
 - **Retry** clears the draft. Tapping a chip shows the model's top 5 so you can pick the right one. **×** removes a chip.
 - The **Sign recognition On / Off** switch under the camera stops sign recognition, so stray movements are not added
   to your message. Words already added stay until you **Edit** them out or press **Retry**.
+- **Patient's voice:** with `ELEVENLABS_API_KEY` set in `.env`, the doctor view has an **Auto audio** button. With it
+  on, each confirmed message is read aloud as soon as it arrives. If the browser blocks sound because the page has
+  not been clicked yet, the button shows off: click it. The speaker icon on a message plays it again.
 
 Every sign below was recognized correctly on all held-out test videos of Deaf signers.
 Use `data/sign_reference.html` to see exactly how each one is signed. That page shows the variant the model learned.

@@ -179,6 +179,8 @@ METRICS_LOG=1 python -m medbridge.server # logs timings/scores/labels (no text/a
   - optional Claude rephrasing of precise-mode sign labels;
   - for the doctor-to-patient signing, any **word that is missing from the local sign dictionary** is sent to the
     public sign.mt service. Set `SIGN_MT=0` to keep everything on the Mac; missing words then show as text chips.
+  - if `ELEVENLABS_API_KEY` is set, the text of each **confirmed patient message** is sent to ElevenLabs, which
+    returns the audio the doctor view plays. Leave the key empty to keep this off.
 - The conversation lives in memory until **End session**.
 - There is no diagnosis or clinical decision support.
 

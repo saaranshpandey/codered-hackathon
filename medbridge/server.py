@@ -12,7 +12,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from medbridge.hub import Hub
@@ -193,14 +193,16 @@ def start_engines(app, hub):
 
     mic = MicAsr(pipeline, device=device, on_level=on_level)
     hub.on_asr_pause = lambda paused: setattr(mic, "paused", paused)
+    app.state.mute_mic = mic.mute_for
     mic.start()
     hub.on_asr_state("listening")
     log.info("engines ready")
 
 
-def create_app(engines=True, patient_local_only=None, sign_builder=None):
+def create_app(engines=True, patient_local_only=None, sign_builder=None, voice=None):
     """patient_local_only: the camera stream and patient controls are served only to this Mac
-    (the doctor view may come from the LAN). Override with PATIENT_LAN=1."""
+    (the doctor view may come from the LAN). Override with PATIENT_LAN=1.
+    voice: speaks confirmed patient messages on the doctor view; by default ElevenLabs, if a key is set."""
     load_dotenv(ROOT / ".env")
     if patient_local_only is None:
         patient_local_only = _env("PATIENT_LAN", "0") != "1"
@@ -217,6 +219,13 @@ def create_app(engines=True, patient_local_only=None, sign_builder=None):
     if sign_builder is None and engines and _env("SIGNING", "1") == "1":
         sign_builder = make_sign_builder()
     signer = SignWorker(hub, sign_builder) if sign_builder is not None else None
+    if voice is None and engines:
+        from medbridge.speech import make_voice
+        voice = make_voice()
+    speaker = None
+    if voice is not None:
+        from medbridge.speech import Speaker
+        speaker = Speaker(hub, voice)
     if signer:
         hub.on_final_caption = signer.submit
         hub.on_interim_caption = signer.prefetch
@@ -250,6 +259,29 @@ def create_app(engines=True, patient_local_only=None, sign_builder=None):
     def vocab():
         labels = json.loads((ROOT / "data/medical_vocab.json").read_text()).values()
         return JSONResponse(list(dict.fromkeys(labels)))
+
+    @app.get("/api/config")
+    def config():
+        return JSONResponse({"speech": speaker is not None})
+
+    @app.get("/api/speech/{message_id}")
+    def speech(message_id: int):
+        """A confirmed patient message as mp3, for the doctor view to play."""
+        from medbridge.speech import seconds
+
+        if speaker is None:
+            return PlainTextResponse("speech is off", status_code=404)
+        try:
+            audio = speaker.get(message_id)
+        except Exception as e:
+            log.warning("speech failed for message %s: %s", message_id, e)
+            return PlainTextResponse("speech service failed", status_code=502)
+        if audio is None:
+            return PlainTextResponse("not found", status_code=404)
+        mute = getattr(app.state, "mute_mic", None)
+        if mute:  # the doctor's microphone would hear this and caption it as the doctor's words
+            mute(seconds(audio) + 1.0)
+        return Response(audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/signing/{caption_id}")
     def signing(caption_id: int, start: int = 0, limit: int = 720):
