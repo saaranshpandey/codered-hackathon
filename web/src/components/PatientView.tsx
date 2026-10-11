@@ -77,18 +77,34 @@ function Captions({ state, signed }: { state: State; signed: SignedWord | null }
   // The caption words the mascot is signing right now are shown in a stronger colour.
   const signing = signed && state.signing?.caption_id === signed.captionId ? state.signing.words : null
   // The list follows the newest caption unless the patient has scrolled up to read back.
+  // Only the patient's own upward scroll pauses following: scroll events the browser fires while the
+  // layout shifts (interim line leaving, captions animating in, the signing panel resizing) must not.
   const scroller = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
   useEffect(() => {
     const el = scroller.current
     if (el && follow.current) el.scrollTop = el.scrollHeight
   }, [captions, state.interim]) // every snapshot: a correction to an older caption can change the height too
+  useEffect(() => {
+    const el = scroller.current, inner = content.current
+    if (!el || !inner) return
+    const ro = new ResizeObserver(() => { if (follow.current) el.scrollTop = el.scrollHeight })
+    ro.observe(el)
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [])
+  const pause = () => { follow.current = false }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <motion.div ref={scroller} layoutScroll
-        onScroll={(e) => { const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48 }}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pr-2 [scrollbar-color:color-mix(in_srgb,var(--color-bone)_25%,transparent)_transparent] [scrollbar-width:thin]">
-        <div className="mt-auto flex flex-col gap-6">
+      <motion.div ref={scroller} layoutScroll tabIndex={-1}
+        onScroll={(e) => { const el = e.currentTarget; if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) follow.current = true }}
+        onWheel={(e) => { if (e.deltaY < 0) pause() }}
+        onTouchMove={pause}
+        onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) pause() }}
+        onPointerDown={(e) => { if (e.target === e.currentTarget) pause() /* scrollbar drag */ }}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pr-2 outline-none [scrollbar-color:color-mix(in_srgb,var(--color-bone)_25%,transparent)_transparent] [scrollbar-width:thin]">
+        <div ref={content} className="mt-auto flex flex-col gap-6">
           {captions.length === 0 && !state.interim && (
             <p className="font-serif text-5xl italic leading-tight text-bone/30">The doctor's words will appear here as they speak.</p>
           )}
