@@ -1,0 +1,272 @@
+import base64
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+GLOSSES = ["YOU", "YOUR", "FEEL", "PAIN", "HURT", "DOCTOR1", "DOCTOR2", "W.H.A.T", "WHAT1", "WHAT2", "MEDICINE",
+           "SEVEN", "THANKYOU", "ME", "HELLO", "OK", "HE"]
+
+
+def test_lexicon_prefers_plain_lowest_variant():
+    from medbridge.text2sign import build_lexicon
+
+    lex = build_lexicon(GLOSSES)
+    assert lex["doctor"] == "DOCTOR1"
+    assert lex["what"] == "WHAT1"
+
+
+def test_text_to_glosses_skips_unsigned_words_and_maps_forms():
+    from medbridge.text2sign import build_lexicon, text_to_glosses
+
+    lex = build_lexicon(GLOSSES)
+    out = text_to_glosses("Are you experiencing chest pain?", lex)
+    assert out == [("you", "YOU"), ("experiencing", "FEEL"), ("chest", None), ("pain", "PAIN")]
+    assert text_to_glosses("It hurts, take 7 medications. Thank you, doctor!", lex) == [
+        ("hurts", "HURT"), ("take", None), ("7", "SEVEN"), ("medications", "MEDICINE"), ("thank you", "THANKYOU"),
+        ("doctor", "DOCTOR1")]
+    assert text_to_glosses("Hi, I'm okay", lex) == [("hi", "HELLO"), ("i'm", "ME"), ("okay", "OK")]
+
+
+def lm(n, x, y, z=0.0):
+    return SimpleNamespace(landmark=[SimpleNamespace(x=x, y=y, z=z) for _ in range(n)])
+
+
+def test_holistic_frame_uses_shared_178_point_layout():
+    from medbridge.text2sign import FACE_IDX, holistic_frame
+
+    pose = lm(33, 0.5, 0.5)
+    pose.landmark[11] = SimpleNamespace(x=0.6, y=0.5, z=0.0)  # person's left shoulder
+    res = SimpleNamespace(pose_landmarks=pose, face_landmarks=lm(468, 0.5, 0.3), left_hand_landmarks=None,
+                          right_hand_landmarks=lm(21, 0.4, 0.7, 0.01))
+    f = holistic_frame(res, 100, 50)
+    assert f.shape == (178, 3) and len(FACE_IDX) == 128
+    assert f[0].tolist() == pytest.approx([60, 25, 0])          # LEFT_SHOULDER in pixels
+    assert np.isnan(f[136:157]).all()                           # LEFT_HAND missing
+    assert f[157, :2].tolist() == pytest.approx([40, 35])        # RIGHT_HAND wrist
+
+
+def test_normalize_centres_shoulders_and_sets_unit_width():
+    from medbridge.text2sign import normalize
+
+    seq = np.full((4, 178, 3), np.nan, np.float32)
+    seq[:, 0] = [300, 200, 10]   # left shoulder
+    seq[:, 1] = [100, 200, 10]   # right shoulder
+    seq[:, 157] = [200, 300, 10]
+    out = normalize(seq)
+    assert out[0, 0].tolist() == pytest.approx([0.5, 0, 0]) and out[0, 1].tolist() == pytest.approx([-0.5, 0, 0])
+    assert out[0, 157].tolist() == pytest.approx([0, 0.5, 0])
+
+
+def test_resample_changes_frame_rate_and_keeps_endpoints():
+    from medbridge.text2sign import resample
+
+    seq = np.zeros((26, 178, 3), np.float32)
+    seq[:, 0, 0] = np.arange(26)
+    out = resample(seq, 25, 30)
+    assert len(out) == 31
+    assert out[0, 0, 0] == 0 and out[-1, 0, 0] == pytest.approx(25)
+
+
+def test_assemble_adds_transitions_and_holds_for_missing_words():
+    from medbridge.text2sign import assemble
+
+    a = np.zeros((10, 178, 3), np.float32)
+    b = np.ones((12, 178, 3), np.float32)
+    motion, timeline = assemble([("you", "YOU", "aslc", a), ("chest", None, "none", None), ("pain", "PAIN", "signmt", b)],
+                                transition=8, hold=18)
+    assert [w["source"] for w in timeline] == ["aslc", "none", "signmt"]
+    assert timeline[0]["start"] == 0 and timeline[0]["end"] == 10
+    assert timeline[1]["end"] - timeline[1]["start"] == 18
+    assert timeline[2]["start"] == timeline[1]["end"] + 8 and timeline[2]["end"] == len(motion)
+    mid = motion[timeline[2]["start"] - 4, 0, 0]
+    assert 0 < mid < 1   # interpolated transition into the next sign
+
+
+def test_payload_round_trips_float32_motion():
+    from medbridge.text2sign import payload
+
+    motion = np.arange(2 * 178 * 3, dtype=np.float32).reshape(2, 178, 3)
+    p = payload(7, motion, [{"word": "you"}], fps=30)
+    back = np.frombuffer(base64.b64decode(p["data"]), dtype=np.float32).reshape(p["frames"], p["points"], 3)
+    assert p["caption_id"] == 7 and np.array_equal(back, motion)
+
+
+def test_builder_uses_dictionary_then_signmt_then_text():
+    from medbridge.text2sign import Builder, build_lexicon
+
+    clip = np.zeros((20, 178, 3), np.float32)
+    clip[:, 0] = [300, 200, 0]; clip[:, 1] = [100, 200, 0]
+    calls = []
+
+    class Dict:
+        def get(self, gloss):
+            return clip if gloss == "YOU" else None
+
+    class SignMT:
+        def get(self, word):
+            calls.append(word)
+            return (clip, 30) if word == "chest" else None
+
+    b = Builder(build_lexicon(GLOSSES), Dict(), SignMT())
+    motion, timeline = b.build("Are you okay? Chest pain")
+    assert [(w["word"], w["source"]) for w in timeline] == [("you", "aslc"), ("okay", "none"), ("chest", "signmt"), ("pain", "none")]
+    assert sorted(calls) == ["chest", "okay", "pain"]   # only words missing from the local dictionary leave the Mac
+    assert motion.shape[1:] == (178, 3)
+
+
+def test_concurrent_downloads_use_separate_temp_files(tmp_path):
+    from medbridge.text2sign import AslCitizenSigns
+
+    (tmp_path / "data/aslc/ASL_Citizen/splits").mkdir(parents=True)
+    (tmp_path / "data/aslc/ASL_Citizen/splits/train.csv").write_text("Participant ID,Video file,Gloss,ASL-LEX Code\n")
+    a, b = AslCitizenSigns(tmp_path), AslCitizenSigns(tmp_path)
+    with a._temp_clip() as pa, b._temp_clip() as pb:
+        assert pa != pb
+    assert not pa.exists() and not pb.exists()
+
+
+def test_lexicon_does_not_pick_number_prefixed_signs():
+    from medbridge.text2sign import build_lexicon
+
+    assert build_lexicon(["8HOUR", "HOUR", "2WEEKS"])["hour"] == "HOUR"
+
+
+def test_fill_gaps_interpolates_short_tracking_dropouts_only():
+    from medbridge.text2sign import fill_gaps
+
+    seq = np.full((30, 178, 3), np.nan, np.float32)
+    seq[:, 157, 0] = np.arange(30, dtype=np.float32)
+    seq[10:14, 157] = np.nan          # 4-frame dropout inside the sign -> filled
+    seq[20:30, 157] = np.nan          # hand gone at the end (rest) -> stays missing
+    out = fill_gaps(seq, max_gap=8)
+    assert out[12, 157, 0] == pytest.approx(12)
+    assert np.isnan(out[25, 157, 0])
+    assert np.isnan(out[5, 0, 0])     # points never present stay missing
+
+
+def _clip(n, value=0.0):
+    clip = np.full((n, 178, 3), value, np.float32)
+    clip[:, 0] = [300, 200, 0]; clip[:, 1] = [100, 200, 0]
+    return clip
+
+
+class _Signs:
+    """A local dictionary stand-in: one clip per known sign, with an optional delay per lookup."""
+
+    def __init__(self, delays=None):
+        self.delays, self.calls = delays or {}, []
+
+    def has(self, gloss):
+        return False
+
+    def get(self, gloss):
+        import time
+        self.calls.append(gloss)
+        time.sleep(self.delays.get(gloss, 0))
+        return _clip(10 + len(gloss)) if gloss in ("YOU", "FEEL", "PAIN", "HURT", "MEDICINE", "HELLO") else None
+
+
+def test_assemble_can_continue_from_an_earlier_batch():
+    from medbridge.text2sign import assemble
+
+    segs = [("you", "YOU", "aslc", _clip(10, 0.0)), ("chest", None, "none", None), ("pain", "PAIN", "aslc", _clip(12, 1.0)),
+            ("hurt", "HURT", "aslc", _clip(9, 2.0))]
+    whole, timeline = assemble(segs)
+    first, t1 = assemble(segs[:2])
+    rest, t2 = assemble(segs[2:], prev=first[-1], offset=len(first))
+    assert np.array_equal(np.concatenate([first, rest]), whole, equal_nan=True)
+    assert t1 + t2 == timeline
+
+
+def test_hand_coverage_counts_only_the_signing_span():
+    from medbridge.text2sign import LH, hand_coverage
+
+    seq = np.full((40, 178, 3), np.nan, np.float32)
+    seq[10:30, LH:LH + 21] = 1.0          # hands rest (untracked) before and after the sign
+    assert hand_coverage(seq) == 1.0
+    seq[18:22, LH:LH + 21] = np.nan       # a 4-frame dropout inside the sign
+    assert hand_coverage(seq) == pytest.approx(16 / 20)
+    seq[:] = np.nan
+    assert hand_coverage(seq) == 0.0
+
+
+def test_builder_stream_gives_the_same_motion_as_build_in_ordered_batches():
+    from medbridge.text2sign import Builder, build_lexicon
+
+    b = Builder(build_lexicon(GLOSSES), _Signs())
+    text = "Hello, do you feel pain? Does the medicine hurt you?"
+    motion, timeline = b.build(text)
+    batches = list(b.stream(text, batch=2))
+    assert [len(t) for _, t in batches] == [2, 2, 2, 1]
+    assert np.array_equal(np.concatenate([m for m, _ in batches]), motion, equal_nan=True)
+    assert [w for _, t in batches for w in t] == timeline
+    assert timeline[-1]["end"] == len(motion) and [w["word"] for w in timeline][:3] == ["hello", "you", "feel"]
+
+
+def test_builder_looks_signs_up_side_by_side_and_keeps_them_in_memory():
+    import time
+
+    from medbridge.text2sign import Builder, build_lexicon
+
+    signs = _Signs(delays={g: 0.25 for g in ("YOU", "FEEL", "PAIN", "HURT")})
+    b = Builder(build_lexicon(GLOSSES), signs, workers=4)
+    t0 = time.perf_counter()
+    b.build("you feel pain hurt")
+    assert time.perf_counter() - t0 < 0.7            # four 0.25 s lookups, not one after another
+    signs.calls.clear()
+    t0 = time.perf_counter()
+    b.build("you feel pain hurt you")
+    assert time.perf_counter() - t0 < 0.1 and signs.calls == []   # second time: straight from memory
+
+
+def test_stream_does_not_hold_ready_signs_behind_a_slow_one():
+    import time
+
+    from medbridge.text2sign import Builder, build_lexicon
+
+    b = Builder(build_lexicon(GLOSSES), _Signs(delays={"PAIN": 0.6}))
+    t0 = time.perf_counter()
+    stream = b.stream("you feel pain hurt")
+    _, first = next(stream)
+    assert [w["word"] for w in first] == ["you", "feel"] and time.perf_counter() - t0 < 0.4
+    rest = [w["word"] for _, t in stream for w in t]
+    assert rest == ["pain", "hurt"]
+
+
+def test_prefetch_starts_local_lookups_early_and_never_asks_signmt():
+    import time
+
+    from medbridge.text2sign import Builder, build_lexicon
+
+    asked = []
+
+    class SignMT:
+        def get(self, word):
+            asked.append(word)
+            return None
+
+    signs = _Signs()
+    b = Builder(build_lexicon(GLOSSES), signs, SignMT())
+    b.prefetch("Do you feel chest")                  # an interim caption, still being spoken
+    for _ in range(100):
+        if sorted(signs.calls) == ["FEEL", "YOU"] and not b.inflight:
+            break
+        time.sleep(0.01)
+    assert sorted(signs.calls) == ["FEEL", "YOU"] and asked == []
+    signs.calls.clear()
+    _, timeline = b.build("Do you feel chest pain?")
+    assert signs.calls == ["PAIN"]                   # the prefetched signs are not fetched again
+    assert asked == ["chest"] and [w["source"] for w in timeline] == ["aslc", "aslc", "none", "aslc"]
+
+
+def test_stream_leaves_out_a_sign_that_takes_too_long_and_has_it_next_time():
+    import time
+
+    from medbridge.text2sign import Builder, build_lexicon
+
+    b = Builder(build_lexicon(GLOSSES), _Signs(delays={"PAIN": 0.5}))
+    words = [w for _, t in b.stream("you pain hurt", max_wait=0.1) for w in t]
+    assert [(w["word"], w["source"]) for w in words] == [("you", "aslc"), ("pain", "none"), ("hurt", "aslc")]
+    time.sleep(0.6)                                  # the slow sign finished in the background
+    assert [w["source"] for w in b.build("you pain hurt")[1]] == ["aslc", "aslc", "aslc"]

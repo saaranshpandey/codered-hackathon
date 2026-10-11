@@ -1,0 +1,11 @@
+CLAUDE.md
+.superpowers/
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*
+!data/medical_vocab.json
+!data/er_phrases.json
+web/node_modules/
+web/dist/

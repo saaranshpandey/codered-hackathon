@@ -1,0 +1,116 @@
+/*
+ * SignWave colours. This is the only file to edit to re-colour the app.
+ *
+ * Each block below is one complete theme: a short list of named colours. Components never use these directly;
+ * they use the roles at the bottom of the file, so changing a colour here changes it everywhere (Tailwind classes,
+ * the camera ring, the microphone waveform).
+ *
+ * - Try a theme without changing anything: add ?theme=NAME to the address, e.g. /patient?theme=ocean
+ *   (the browser remembers it; ?theme=default goes back).
+ * - Change the default: move the line ":root:not([data-theme])," to the block you want.
+ * - Make your own: copy a block, give it a new name, change the colours.
+ *
+ * Three rules keep text readable: "on-go" is the text on "go"; "clinic-fill" carries text in the clinician page
+ * colour; "marker" sits behind patient text. Each pair must contrast.
+ *
+ * Not covered here: the mascot's own colours (src/lib/cougar.ts) and the browser-tab icon (public/favicon.svg).
+ */
+
+/* Cougar: warm white with University of Houston red, to match the mascot's jersey. */
+[data-theme="cougar"] {
+  --patient-page: #FFFAF7;   --patient-panel: #F6EEE9;  --patient-edge: rgb(27 27 31 / 0.13);  --patient-text: #1B1B1F;
+  --clinic-page: #FFFAF7;    --clinic-card: #FFFFFF;    --clinic-edge: rgb(27 27 31 / 0.13);   --clinic-text: #1B1B1F;
+  --clinic-fill: #C8102E;    /* the doctor's lines and buttons on the clinician screen */
+  --go: #C8102E;             /* Confirm & send */
+  --on-go: #FFFAF7;          /* the text on it, and the knob of a switch */
+  --accent: #C8102E;         /* switches, the camera ring, the logo */
+  --soft: #F4ECE7;           /* the patient's messages on the clinician screen */
+  --marker: #FFDF8A;         /* behind the word being signed */
+  --stage: #EFE8E3;          /* behind the mascot */
+  --alert: #B45309;          /* warnings: camera unavailable, corrected text */
+}
+
+/* Ocean: clean white and blue, the familiar clinical look. */
+[data-theme="ocean"] {
+  --patient-page: #F6F9FC;   --patient-panel: #E8F0FA;  --patient-edge: rgb(15 23 42 / 0.13);  --patient-text: #0F172A;
+  --clinic-page: #F6F9FC;    --clinic-card: #FFFFFF;    --clinic-edge: rgb(15 23 42 / 0.13);   --clinic-text: #0F172A;
+  --clinic-fill: #1D4ED8;
+  --go: #1D4ED8;
+  --on-go: #F6F9FC;
+  --accent: #2563EB;
+  --soft: #E3EDFB;
+  --marker: #FDE68A;
+  --stage: #DCE9F8;
+  --alert: #B45309;
+}
+
+/* Midnight: dark navy on both screens with sky-blue accents. */
+[data-theme="midnight"] {
+  --patient-page: #0B1220;   --patient-panel: #131C30;  --patient-edge: rgb(226 232 240 / 0.14);  --patient-text: #E7EDF6;
+  --clinic-page: #0B1220;    --clinic-card: #101829;    --clinic-edge: rgb(226 232 240 / 0.14);   --clinic-text: #E7EDF6;
+  --clinic-fill: #7DD3FC;
+  --go: #7DD3FC;
+  --on-go: #0B1220;
+  --accent: #38BDF8;
+  --soft: #172740;
+  --marker: #1D4ED8;
+  --stage: #16223A;
+  --alert: #FBBF24;
+}
+
+/* Sage: cream with soft greens and a pale-blue stage. */
+[data-theme="sage"] {
+  --patient-page: #F5F7E9;   --patient-panel: #E1EED4;  --patient-edge: rgb(165 200 152 / 0.7);  --patient-text: #1F201F;
+  --clinic-page: #F5F7E9;    --clinic-card: #FBFCF6;    --clinic-edge: rgb(165 200 152 / 0.7);   --clinic-text: #1F201F;
+  --clinic-fill: #557B4A;
+  --go: #557B4A;
+  --on-go: #F5F7E9;
+  --accent: #669857;
+  --soft: #E4F1DC;
+  --marker: #B1D9EE;
+  --stage: #B1D9EE;
+  --alert: #987942;
+}
+
+/* Classic (the default): dark patient screen, light clinician screen, with the red of the mascot's jersey. */
+:root:not([data-theme]),
+[data-theme="classic"] {
+  --patient-page: #0E0F0C;   --patient-panel: #171813;  --patient-edge: rgb(242 238 230 / 0.1);  --patient-text: #F2EEE6;
+  --clinic-page: #F4F1EA;    --clinic-card: #FBFAF6;    --clinic-edge: rgb(20 21 15 / 0.1);     --clinic-text: #14150F;
+  --clinic-fill: #14150F;
+  --go: #C8102E;
+  --on-go: #FFF7F2;
+  --accent: #C8102E;
+  --soft: #F7E4E2;
+  --marker: #D9480F;
+  --stage: #17140F;
+  --alert: #FFB020;
+}
+
+/* ROLES: the names components use. Each one points at a colour from the active theme above. */
+@theme {
+  /* patient screen (the names date from when it was always dark: "ink" is its page, "bone" its text) */
+  --color-ink: var(--patient-page);
+  --color-ink-raised: var(--patient-panel);
+  --color-ink-line: var(--patient-edge);
+  --color-bone: var(--patient-text);
+  --color-bone-dim: color-mix(in srgb, var(--patient-text) 55%, transparent);
+
+  /* clinician screen */
+  --color-paper: var(--clinic-page);
+  --color-paper-raised: var(--clinic-card);
+  --color-paper-line: var(--clinic-edge);
+  --color-graphite: var(--clinic-text);
+  --color-graphite-dim: color-mix(in srgb, var(--clinic-text) 55%, transparent);
+  --color-doctor: var(--clinic-fill);
+
+  /* shared */
+  --color-mint: var(--accent);
+  --color-mint-deep: var(--go);
+  --color-on-go: var(--on-go);
+  --color-leaf: var(--soft);
+  --color-signal: var(--marker);
+  --color-stage: var(--stage);
+  --color-amber: var(--alert);
+  --color-amber-deep: color-mix(in srgb, var(--alert) 70%, black);
+}
