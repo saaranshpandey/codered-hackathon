@@ -141,7 +141,7 @@ function LiveLane({ state }: { state: State }) {
       <div className="mb-4 flex items-center justify-between">
         <span className="eyebrow text-graphite/50">Live from patient</span>
         <StatusPill tone={active ? 'live' : state.sign.state === 'no_camera' ? 'warn' : 'idle'}
-          label={signStateLabel[state.sign.state] ?? state.sign.state} pulse={active} />
+          label={state.sign.enabled === false ? 'Sign recognition off' : signStateLabel[state.sign.state] ?? state.sign.state} pulse={active} />
       </div>
       <p className="eyebrow mb-3 text-graphite/40">Mode · {state.sign.mode === 'natural' ? 'natural signing' : 'one sign at a time'}</p>
       {n || state.precise.length > 0 || state.draft.text ? (

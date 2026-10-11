@@ -14,6 +14,10 @@ pre-recorded, and the AI output is never faked.
 
 ## What it can and cannot do
 
+> **Natural signing is switched off for now.** The patient view offers one sign at a time only. The natural-signing
+> code is commented out in `medbridge/server.py` and `web/src/components/PatientView.tsx`; the natural-signing
+> parts of this README describe it for when it is switched back on.
+
 | | Natural signing (default) | One sign at a time (precise) |
 |---|---|---|
 | Model | [Uni-Sign](https://github.com/ZechengLi19/Uni-Sign) (ICLR 2025), pose-only, fine-tuned on OpenASL | [ASL Citizen](https://github.com/microsoft/ASL-citizen-code) ST-GCN (Microsoft, NeurIPS 2023) |

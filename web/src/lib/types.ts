@@ -9,7 +9,7 @@ export type State = {
   interim: { id: number; text: string } | null
   messages: Message[]
   asr: { state: 'listening' | 'speech' | 'paused' | 'loading' }
-  sign: { mode: 'natural' | 'precise'; state: SignState }
+  sign: { mode: 'natural' | 'precise'; state: SignState; enabled: boolean } // enabled: the patient's on/off switch
   natural: { seg_id: number; candidates: Candidate[]; latency_ms: number | null; selected: number; low_confidence: boolean } | null
   precise: PreciseItem[]
   draft: { text: string; source: string; edited: boolean }

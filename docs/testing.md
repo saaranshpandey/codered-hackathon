@@ -3,6 +3,13 @@
 This guide shows how to test both directions on one MacBook (built-in camera and microphone), with the
 patient and doctor views side by side. Work through the sections in order. Write results in the sheet at the end.
 
+**Natural signing is switched off for now.** The patient view has no mode switch and always uses one sign at a time.
+Skip section 3 and the natural-signing rows in sections 4 to 6.
+
+**The sign chips are switched off for now.** Each recognized sign goes straight into "Your message to the doctor".
+Where the steps below mention a chip, look at that message instead. To fix a wrong word, press **Edit**, or **Retry**
+to start again.
+
 ## 0. Start
 
 ```bash
@@ -84,6 +91,8 @@ On the patient view, choose **One sign at a time**. For each row:
 - A chip appears. Then sign the next word.
 - Press **Confirm & send**.
 - **Retry** clears the draft. Tapping a chip shows the model's top 5 so you can pick the right one. **×** removes a chip.
+- The **Sign recognition On / Off** switch under the camera stops sign recognition, so stray movements are not added
+  to your message. Words already added stay until you **Edit** them out or press **Retry**.
 
 Every sign below was recognized correctly on all held-out test videos of Deaf signers.
 Use `data/sign_reference.html` to see exactly how each one is signed. That page shows the variant the model learned.

@@ -142,6 +142,33 @@ def test_vision_processes_latest_frame_without_backlog_at_720p():
 
 
 
+def test_vision_stops_reading_frames_for_signs_while_switched_off():
+    import time
+
+    from medbridge.vision import Vision
+
+    class CountingHub(HubStub):
+        landmarks = 0
+
+        def stream(self, msg):
+            self.landmarks += msg["type"] == "landmarks"
+
+    eng, hub = SlowEngine(), CountingHub()
+    v = Vision(hub, 0, {"natural": eng}, mode="natural", capture=lambda index: FakeCap())
+    v.start()
+    time.sleep(0.3)
+    v.set_enabled(False)
+    time.sleep(0.1)                           # let the frame in progress finish
+    seen, sent = len(eng.seen), hub.landmarks
+    assert seen >= 3
+    time.sleep(0.3)
+    assert len(eng.seen) == seen and hub.landmarks == sent   # off: no pose extraction, no landmarks
+    assert v.jpeg                                            # the preview keeps running
+    v.set_enabled(True)
+    time.sleep(0.3)
+    assert len(eng.seen) > seen
+
+
 def test_natural_engine_ignores_signing_until_started():
     from medbridge.vision import NaturalEngine
 

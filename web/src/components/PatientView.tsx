@@ -11,7 +11,9 @@ type Send = (msg: Record<string, unknown>) => void
 
 export function PatientView() {
   const { state, connected, fps, landmarks, level, send } = useMedbridge('patient')
-  const [countdown, setCountdown] = useState<number | null>(null)
+  // Natural signing is disabled for now. To re-enable, restore the commented lines in this component and the
+  // ModeSwitch, NaturalControl and NaturalReply components below, then the engine in medbridge/server.py.
+  // const [countdown, setCountdown] = useState<number | null>(null)
   const [signed, setSigned] = useState<SignedWord | null>(null)
   return (
     <div className="grain flex min-h-full flex-col bg-ink text-bone lg:h-full lg:min-h-[760px]">
@@ -35,10 +37,13 @@ export function PatientView() {
           </section>
           <section className="flex min-h-0 flex-col gap-5 pb-2 lg:col-span-5 lg:overflow-y-auto">
             <CameraPanel landmarks={landmarks} signState={state.sign.state} mode={state.sign.mode} fps={fps}
-              compact={!!state.natural || state.precise.length > 0} countdown={countdown} />
-            <ModeSwitch mode={state.sign.mode} send={send} />
-            {state.sign.mode === 'natural' && <NaturalControl state={state} send={send} countdown={countdown} setCountdown={setCountdown} />}
-            {state.sign.mode === 'natural' ? <NaturalReply state={state} send={send} /> : <PreciseReply state={state} send={send} />}
+              enabled={state.sign.enabled !== false}
+              compact={false /* !!state.natural || state.precise.length > 0: shrank the video to make room for the sign chips */}
+              countdown={null /* countdown */} />
+            {/* <ModeSwitch mode={state.sign.mode} send={send} /> */}
+            {/* {state.sign.mode === 'natural' && <NaturalControl state={state} send={send} countdown={countdown} setCountdown={setCountdown} />} */}
+            {/* {state.sign.mode === 'natural' ? <NaturalReply state={state} send={send} /> : <PreciseReply state={state} send={send} />} */}
+            <PreciseReply state={state} send={send} />
             <Composer state={state} send={send} />
           </section>
         </main>
@@ -100,140 +105,159 @@ function Captions({ state, signed }: { state: State; signed: SignedWord | null }
   )
 }
 
-function ModeSwitch({ mode, send }: { mode: string; send: Send }) {
-  const options = [['natural', 'Natural signing'], ['precise', 'One sign at a time']] as const
+// function ModeSwitch({ mode, send }: { mode: string; send: Send }) {
+//   const options = [['natural', 'Natural signing'], ['precise', 'One sign at a time']] as const
+//   return (
+//     <div className="grid grid-cols-2 rounded-full border border-ink-line bg-ink-raised p-1">
+//       {options.map(([value, label]) => (
+//         <button key={value} onClick={() => mode !== value && send({ type: 'mode.set', mode: value })}
+//           className={`relative rounded-full py-2.5 text-[15px] font-bold transition-colors ${mode === value ? 'text-ink' : 'text-bone/60 hover:text-bone'}`}>
+//           {mode === value && <motion.span layoutId="mode-pill" className="absolute inset-0 rounded-full bg-bone"
+//             transition={{ type: 'spring', stiffness: 400, damping: 34 }} />}
+//           <span className="relative">{label}</span>
+//         </button>
+//       ))}
+//     </div>
+//   )
+// }
+//
+// /** Natural signing is recorded between an explicit Start (3-2-1 countdown) and Done. Space does the same. */
+// function NaturalControl({ state, send, countdown, setCountdown }: {
+//   state: State; send: Send; countdown: number | null; setCountdown: (n: number | null) => void
+// }) {
+//   const signing = state.sign.state === 'signing'
+//   const busy = state.sign.state === 'translating' || state.sign.state === 'loading'
+//   const [elapsed, setElapsed] = useState(0)
+//
+//   const start = () => {
+//     if (signing || busy || countdown !== null) return
+//     let n = 3
+//     setCountdown(n)
+//     const t = setInterval(() => {
+//       n -= 1
+//       if (n > 0) { setCountdown(n); return }
+//       clearInterval(t)
+//       setCountdown(null)
+//       send({ type: 'sign.start' })
+//     }, 1000)
+//   }
+//   const done = () => { if (signing) send({ type: 'sign.done' }) }
+//
+//   useEffect(() => {
+//     if (!signing) { setElapsed(0); return }
+//     const t0 = Date.now()
+//     const t = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 250)
+//     return () => clearInterval(t)
+//   }, [signing])
+//
+//   useEffect(() => {
+//     const onKey = (e: KeyboardEvent) => {
+//       const tag = (e.target as HTMLElement)?.tagName
+//       if (e.code !== 'Space' || tag === 'TEXTAREA' || tag === 'INPUT') return
+//       e.preventDefault()
+//       if (signing) done(); else start()
+//     }
+//     window.addEventListener('keydown', onKey)
+//     return () => window.removeEventListener('keydown', onKey)
+//   })
+//
+//   if (signing) {
+//     return (
+//       <motion.button onClick={done} whileTap={{ scale: 0.97 }}
+//         className="relative flex items-center justify-between overflow-hidden rounded-3xl bg-signal px-7 py-5 text-left text-ink">
+//         <motion.span className="absolute inset-0 bg-white/20" animate={{ opacity: [0, 0.6, 0] }} transition={{ duration: 1.6, repeat: Infinity }} />
+//         <span className="relative">
+//           <span className="block text-[22px] font-bold">Done</span>
+//           <span className="text-[14px] opacity-80">Tap or press Space when you finish your sentence</span>
+//         </span>
+//         <span className="relative font-mono text-[28px]">0:{String(elapsed).padStart(2, '0')}</span>
+//       </motion.button>
+//     )
+//   }
+//   return (
+//     <button onClick={start} disabled={busy || countdown !== null}
+//       className="flex items-center justify-between rounded-3xl border border-bone/25 bg-ink-raised px-7 py-5 text-left transition-colors hover:border-bone/50 disabled:opacity-40">
+//       <span>
+//         <span className="block text-[22px] font-bold">{busy ? 'Translating…' : countdown !== null ? 'Get ready…' : 'Start signing'}</span>
+//         <span className="text-[14px] text-bone/55">Tap or press Space, sign your sentence, then tap Done</span>
+//       </span>
+//       <Icon name="hand" size={30} />
+//     </button>
+//   )
+// }
+//
+// function NaturalReply({ state, send }: { state: State; send: Send }) {
+//   const n = state.natural
+//   if (!n) return null
+//   return (
+//     <div>
+//       <div className="mb-3 flex items-center justify-between">
+//         <span className="eyebrow text-bone/45">Closest ER phrases — choose what you meant</span>
+//         {n.latency_ms !== null && <span className="eyebrow text-bone/35">translated in {n.latency_ms} ms</span>}
+//       </div>
+//       {n.low_confidence && (
+//         <p className="mb-3 rounded-2xl bg-amber/12 px-4 py-3 text-[15px] text-amber">
+//           Low confidence. None of these may be right — retry, or switch to one sign at a time.
+//         </p>
+//       )}
+//       <div className="flex flex-col gap-2.5">
+//         {n.candidates.map((c, i) => (
+//           <motion.button key={`${n.seg_id}-${i}`} onClick={() => send({ type: 'candidate.pick', index: i })}
+//             initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.07 }}
+//             className={`group flex items-center gap-4 rounded-2xl border px-5 py-4 text-left transition-colors ${n.selected === i ? 'border-mint bg-mint/10' : 'border-ink-line bg-ink-raised hover:border-bone/30'}`}>
+//             <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border ${n.selected === i ? 'border-mint bg-mint text-ink' : 'border-bone/25'}`}>
+//               {n.selected === i && <Icon name="check" size={14} />}
+//             </span>
+//             <span className="flex-1">
+//               <span className="eyebrow block text-bone/40">{c.kind === 'free' ? 'Free translation' : 'ER phrase'}</span>
+//               <span className="text-[19px] leading-snug">{c.text}</span>
+//             </span>
+//             <span className="flex w-16 flex-col items-end gap-1">
+//               <span className="font-mono text-xs text-bone/50">{Math.round(c.rel_score * 100)}%</span>
+//               <span className="h-1 w-full overflow-hidden rounded-full bg-bone/10">
+//                 <span className="block h-full rounded-full bg-bone/60" style={{ width: `${c.rel_score * 100}%` }} />
+//               </span>
+//             </span>
+//           </motion.button>
+//         ))}
+//       </div>
+//     </div>
+//   )
+// }
+
+function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
   return (
-    <div className="grid grid-cols-2 rounded-full border border-ink-line bg-ink-raised p-1">
-      {options.map(([value, label]) => (
-        <button key={value} onClick={() => mode !== value && send({ type: 'mode.set', mode: value })}
-          className={`relative rounded-full py-2.5 text-[15px] font-bold transition-colors ${mode === value ? 'text-ink' : 'text-bone/60 hover:text-bone'}`}>
-          {mode === value && <motion.span layoutId="mode-pill" className="absolute inset-0 rounded-full bg-bone"
-            transition={{ type: 'spring', stiffness: 400, damping: 34 }} />}
-          <span className="relative">{label}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/** Natural signing is recorded between an explicit Start (3-2-1 countdown) and Done. Space does the same. */
-function NaturalControl({ state, send, countdown, setCountdown }: {
-  state: State; send: Send; countdown: number | null; setCountdown: (n: number | null) => void
-}) {
-  const signing = state.sign.state === 'signing'
-  const busy = state.sign.state === 'translating' || state.sign.state === 'loading'
-  const [elapsed, setElapsed] = useState(0)
-
-  const start = () => {
-    if (signing || busy || countdown !== null) return
-    let n = 3
-    setCountdown(n)
-    const t = setInterval(() => {
-      n -= 1
-      if (n > 0) { setCountdown(n); return }
-      clearInterval(t)
-      setCountdown(null)
-      send({ type: 'sign.start' })
-    }, 1000)
-  }
-  const done = () => { if (signing) send({ type: 'sign.done' }) }
-
-  useEffect(() => {
-    if (!signing) { setElapsed(0); return }
-    const t0 = Date.now()
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 250)
-    return () => clearInterval(t)
-  }, [signing])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (e.code !== 'Space' || tag === 'TEXTAREA' || tag === 'INPUT') return
-      e.preventDefault()
-      if (signing) done(); else start()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  })
-
-  if (signing) {
-    return (
-      <motion.button onClick={done} whileTap={{ scale: 0.97 }}
-        className="relative flex items-center justify-between overflow-hidden rounded-3xl bg-signal px-7 py-5 text-left text-ink">
-        <motion.span className="absolute inset-0 bg-white/20" animate={{ opacity: [0, 0.6, 0] }} transition={{ duration: 1.6, repeat: Infinity }} />
-        <span className="relative">
-          <span className="block text-[22px] font-bold">Done</span>
-          <span className="text-[14px] opacity-80">Tap or press Space when you finish your sentence</span>
-        </span>
-        <span className="relative font-mono text-[28px]">0:{String(elapsed).padStart(2, '0')}</span>
-      </motion.button>
-    )
-  }
-  return (
-    <button onClick={start} disabled={busy || countdown !== null}
-      className="flex items-center justify-between rounded-3xl border border-bone/25 bg-ink-raised px-7 py-5 text-left transition-colors hover:border-bone/50 disabled:opacity-40">
-      <span>
-        <span className="block text-[22px] font-bold">{busy ? 'Translating…' : countdown !== null ? 'Get ready…' : 'Start signing'}</span>
-        <span className="text-[14px] text-bone/55">Tap or press Space, sign your sentence, then tap Done</span>
+    <button role="switch" aria-checked={on} aria-label={label} onClick={onToggle}
+      className={`eyebrow flex items-center gap-2 transition-colors ${on ? 'text-mint' : 'text-bone/45 hover:text-bone'}`}>
+      <span className={`relative h-[18px] w-8 rounded-full transition-colors ${on ? 'bg-mint' : 'bg-bone/20'}`}>
+        <span className={`absolute top-[3px] h-3 w-3 rounded-full bg-ink transition-[left] ${on ? 'left-[17px]' : 'left-[3px]'}`} />
       </span>
-      <Icon name="hand" size={30} />
+      {on ? 'On' : 'Off'}
     </button>
   )
 }
 
-function NaturalReply({ state, send }: { state: State; send: Send }) {
-  const n = state.natural
-  if (!n) return null
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="eyebrow text-bone/45">Closest ER phrases — choose what you meant</span>
-        {n.latency_ms !== null && <span className="eyebrow text-bone/35">translated in {n.latency_ms} ms</span>}
-      </div>
-      {n.low_confidence && (
-        <p className="mb-3 rounded-2xl bg-amber/12 px-4 py-3 text-[15px] text-amber">
-          Low confidence. None of these may be right — retry, or switch to one sign at a time.
-        </p>
-      )}
-      <div className="flex flex-col gap-2.5">
-        {n.candidates.map((c, i) => (
-          <motion.button key={`${n.seg_id}-${i}`} onClick={() => send({ type: 'candidate.pick', index: i })}
-            initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.07 }}
-            className={`group flex items-center gap-4 rounded-2xl border px-5 py-4 text-left transition-colors ${n.selected === i ? 'border-mint bg-mint/10' : 'border-ink-line bg-ink-raised hover:border-bone/30'}`}>
-            <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border ${n.selected === i ? 'border-mint bg-mint text-ink' : 'border-bone/25'}`}>
-              {n.selected === i && <Icon name="check" size={14} />}
-            </span>
-            <span className="flex-1">
-              <span className="eyebrow block text-bone/40">{c.kind === 'free' ? 'Free translation' : 'ER phrase'}</span>
-              <span className="text-[19px] leading-snug">{c.text}</span>
-            </span>
-            <span className="flex w-16 flex-col items-end gap-1">
-              <span className="font-mono text-xs text-bone/50">{Math.round(c.rel_score * 100)}%</span>
-              <span className="h-1 w-full overflow-hidden rounded-full bg-bone/10">
-                <span className="block h-full rounded-full bg-bone/60" style={{ width: `${c.rel_score * 100}%` }} />
-              </span>
-            </span>
-          </motion.button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function PreciseReply({ state, send }: { state: State; send: Send }) {
-  const [open, setOpen] = useState<number | null>(null)
+  // The sign chips are disabled for now: recognized signs go straight into "Your message to the doctor".
+  // To re-enable, restore the commented lines in this component and the `compact` value on CameraPanel above.
+  // const [open, setOpen] = useState<number | null>(null)
   const [vocab, setVocab] = useState<string[] | null>(null)
   const [showVocab, setShowVocab] = useState(false)
   useEffect(() => { fetch('/api/vocab').then((r) => r.json()).then(setVocab).catch(() => setVocab([])) }, [])
-  const openItem = state.precise.find((i) => i.seg_id === open)
+  // const openItem = state.precise.find((i) => i.seg_id === open)
+  const on = state.sign.enabled !== false // a server from before the switch existed sends no value: treat as on
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <span className="eyebrow text-bone/45">Your signs</span>
+        <span className="flex items-center gap-3">
+          <span className="eyebrow text-bone/45">Sign recognition</span>
+          <Switch on={on} label="Sign recognition" onToggle={() => send({ type: 'sign.enable', on: !on })} />
+        </span>
         <button onClick={() => setShowVocab((v) => !v)} className="eyebrow text-bone/45 hover:text-bone">
           Signs I can recognize {vocab ? `(${vocab.length})` : ''}
         </button>
       </div>
+      {/* Hint box and sign chips (one per recognized sign, with a confidence bar, a remove button and a top-5 picker).
       {state.precise.length === 0 ? (
         <p className="rounded-3xl border border-dashed border-ink-line px-6 py-5 text-bone/60">Sign one word, lower your hands, then sign the next.</p>
       ) : (
@@ -271,6 +295,7 @@ function PreciseReply({ state, send }: { state: State; send: Send }) {
           </motion.div>
         )}
       </AnimatePresence>
+      */}
       <AnimatePresence>
         {showVocab && vocab && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">

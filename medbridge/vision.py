@@ -179,6 +179,10 @@ class Vision:
         self._new_frame = threading.Condition()
         self._force_end = False
         self._start = False
+        self.enabled = True  # the patient's on/off switch: while off, frames are only shown, not read for signs
+
+    def set_enabled(self, on):
+        self.enabled = on
 
     def start_signing(self):
         self._start = True
@@ -213,6 +217,7 @@ class Vision:
             return
         threading.Thread(target=self._capture_loop, args=(cap,), daemon=True, name="capture").start()
         engine, seen, n, t0 = None, 0, 0, time.perf_counter()
+        was_enabled = True
         while True:
             with self._new_frame:
                 self._new_frame.wait_for(lambda: self._seq != seen)
@@ -221,16 +226,23 @@ class Vision:
                 engine = self.engines[self.mode]
                 engine.cancel()  # drop any half-finished clip from the other mode
                 self.hub.on_sign_status("idle")
-            if self._start:
-                self._start = False
-                if hasattr(engine, "start"):
-                    engine.start()
-            pose = engine.extract(frame)
-            engine.on_pose(pose)
-            if self._force_end:
-                self._force_end = False
-                engine.force_end()
-            self.hub.stream({"type": "landmarks", "mode": engine.name, **engine.landmarks(pose)})
+            enabled = self.enabled
+            if enabled:
+                if self._start:
+                    self._start = False
+                    if hasattr(engine, "start"):
+                        engine.start()
+                pose = engine.extract(frame)
+                engine.on_pose(pose)
+                if self._force_end:
+                    self._force_end = False
+                    engine.force_end()
+                self.hub.stream({"type": "landmarks", "mode": engine.name, **engine.landmarks(pose)})
+            elif was_enabled:  # just switched off: drop any half-finished sign
+                engine.cancel()
+                self._start = self._force_end = False
+                self.hub.on_sign_status("idle")
+            was_enabled = enabled
             ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
             with self.frame_ready:
                 self.jpeg = buf.tobytes()

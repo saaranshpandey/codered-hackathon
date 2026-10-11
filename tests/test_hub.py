@@ -107,6 +107,16 @@ def test_mode_switch_clears_draft_and_notifies_vision():
     assert modes == ["natural"]
 
 
+def test_mode_set_to_a_mode_the_server_does_not_run_is_ignored():
+    from medbridge.hub import Hub
+
+    modes = []
+    h = Hub(broadcast=lambda m: None, translate=literal, on_mode=modes.append, modes=("precise",))
+    h.state["sign"]["mode"] = "precise"
+    h.apply({"type": "mode.set", "mode": "natural"}, role="patient")
+    assert h.state["sign"]["mode"] == "precise" and modes == []
+
+
 def test_roles_are_enforced(hub):
     hub.on_sentence(sentence(1, [("My stomach hurts.", -0.4), ("b", -0.6), ("c", -0.9)]))
     hub.apply({"type": "draft.confirm"}, role="doctor")
@@ -134,6 +144,30 @@ def test_late_sentence_after_switch_to_precise_is_ignored(hub):
     hub.apply({"type": "mode.set", "mode": "precise"}, role="patient")
     hub.on_sentence(sentence(1, [("My stomach hurts.", -0.4), ("b", -0.6), ("c", -0.9)]))
     assert hub.state["natural"] is None and hub.state["draft"]["text"] == ""
+
+
+def test_sign_recognition_switch_drops_signs_while_off_and_tells_vision(hub):
+    hub.apply({"type": "mode.set", "mode": "precise"}, role="patient")
+    calls = []
+    hub.on_sign_enable = calls.append
+    hub.on_sign_status("signing")
+    hub.apply({"type": "sign.enable", "on": False}, role="patient")
+    assert hub.state["sign"]["enabled"] is False and hub.state["sign"]["state"] == "idle"
+    hub.on_sign_prediction(1, [{"label": "yes", "glosses": ["YES"], "p": 0.9}])
+    assert hub.state["precise"] == [] and hub.state["draft"]["text"] == ""
+    hub.apply({"type": "sign.enable", "on": True}, role="patient")
+    hub.on_sign_prediction(2, [{"label": "yes", "glosses": ["YES"], "p": 0.9}])
+    assert [i["chosen"] for i in hub.state["precise"]] == ["yes"]
+    assert calls == [False, True]
+
+
+def test_sign_recognition_switch_is_patient_only_survives_session_end_and_ignores_bad_values(hub):
+    hub.apply({"type": "sign.enable", "on": False}, role="doctor")
+    hub.apply({"type": "sign.enable", "on": "no"}, role="patient")
+    assert hub.state["sign"]["enabled"] is True
+    hub.apply({"type": "sign.enable", "on": False}, role="patient")
+    hub.apply({"type": "session.end"}, role="doctor")
+    assert hub.state["sign"]["enabled"] is False
 
 
 def test_late_sign_after_switch_to_natural_is_ignored(hub):

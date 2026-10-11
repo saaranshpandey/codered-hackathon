@@ -108,26 +108,32 @@ def start_engines(app, hub):
     import json as _json
 
     import sounddevice as sd
-    import torch
+    # import torch  # only chose the device for the natural-signing model
 
     from medbridge.asr import MicAsr, SpeechPipeline, Transcriber
     from medbridge.islr import load_gloss_list, load_stgcn
-    from medbridge.unisign_runner import NaturalSigner
-    from medbridge.vision import NaturalEngine, PreciseEngine, Vision
+    # Natural signing (Uni-Sign) is disabled for now. To re-enable, restore the commented lines in this function and in
+    # create_app below, and the natural-signing parts of web/src/components/PatientView.tsx.
+    # from medbridge.unisign_runner import NaturalSigner
+    # from medbridge.vision import NaturalEngine
+    from medbridge.vision import PreciseEngine, Vision
 
     hub.on_sign_status("loading")
     glosses = load_gloss_list(ROOT / "data/aslc/ASL_Citizen/splits/train.csv")
     vocab = _json.loads((ROOT / "data/medical_vocab.json").read_text())
     precise = PreciseEngine(hub, load_stgcn(ROOT / "data/models/aslc_stgcn/ASL_citizen_stgcn_weights.pt", len(glosses)),
                             glosses, vocab)
-    signer = NaturalSigner(ROOT / "data/models/openasl_pose_only_slt.pth",
-                           device="mps" if torch.backends.mps.is_available() else "cpu",
-                           pose_mode=_env("NATURAL_POSE_MODE", "lightweight"),
-                           phrases=_json.loads((ROOT / "data/er_phrases.json").read_text())["patient"])
-    natural = NaturalEngine(hub, signer, rest_line=float(_env("REST_LINE", "0.85")))
-    vision = Vision(hub, int(_env("CAMERA_INDEX", "0")), {"natural": natural, "precise": precise},
-                    mode=hub.state["sign"]["mode"])
+    # signer = NaturalSigner(ROOT / "data/models/openasl_pose_only_slt.pth",
+    #                        device="mps" if torch.backends.mps.is_available() else "cpu",
+    #                        pose_mode=_env("NATURAL_POSE_MODE", "lightweight"),
+    #                        phrases=_json.loads((ROOT / "data/er_phrases.json").read_text())["patient"])
+    # natural = NaturalEngine(hub, signer, rest_line=float(_env("REST_LINE", "0.85")))
+    # vision = Vision(hub, int(_env("CAMERA_INDEX", "0")), {"natural": natural, "precise": precise},
+    #                 mode=hub.state["sign"]["mode"])
+    vision = Vision(hub, int(_env("CAMERA_INDEX", "0")), {"precise": precise}, mode=hub.state["sign"]["mode"])
     hub.on_mode, hub.on_sign_done, hub.on_sign_start = vision.set_mode, vision.force_end, vision.start_signing
+    hub.on_sign_enable = vision.set_enabled
+    vision.enabled = hub.state["sign"]["enabled"]  # the switch may have been used while the models were loading
     app.state.vision = vision
     vision.start()
 
@@ -165,8 +171,10 @@ def create_app(engines=True, patient_local_only=None, sign_builder=None):
               precise_threshold=float(_env("PRECISE_THRESHOLD", "0.3")),
               natural_min_score=float(_env("NATURAL_MIN_SCORE", "-0.65")),
               phrase_min_score=float(_env("PHRASE_MIN_SCORE", "-1.5")),
-              async_translate=llm)
-    hub.state["sign"]["mode"] = _env("DEFAULT_MODE", "natural")
+              async_translate=llm,
+              modes=("precise",))  # natural signing is disabled for now; drop this argument to offer both modes
+    # hub.state["sign"]["mode"] = _env("DEFAULT_MODE", "natural")
+    hub.state["sign"]["mode"] = "precise"
     if sign_builder is None and engines and _env("SIGNING", "1") == "1":
         sign_builder = make_sign_builder()
     signer = SignWorker(hub, sign_builder) if sign_builder is not None else None

@@ -16,10 +16,13 @@ const RING: Record<SignState, { border: string; glow: string }> = {
   recognizing: { border: 'rgb(255 176 32 / 0.9)', glow: '0 0 48px -8px rgb(255 176 32 / 0.5)' },
 }
 
-function caption(state: SignState, mode: string) {
+function caption(state: SignState, mode: string, enabled: boolean) {
   switch (state) {
     case 'loading': return 'Loading sign models…'
     case 'no_camera': return 'Camera unavailable'
+  }
+  if (!enabled) return 'Sign recognition is off'
+  switch (state) {
     case 'hands': return 'Hands detected'
     case 'signing': return mode === 'natural' ? 'Recording — tap Done when you finish' : 'Signing — lower your hands after the sign'
     case 'translating': return 'Translating your sentence…'
@@ -28,9 +31,9 @@ function caption(state: SignState, mode: string) {
   }
 }
 
-export function CameraPanel({ landmarks, signState, mode, fps, compact, countdown }: {
-  landmarks: RefObject<Landmarks | null>; signState: SignState; mode: string; fps: number | null; compact: boolean
-  countdown: number | null
+export function CameraPanel({ landmarks, signState, mode, enabled, fps, compact, countdown }: {
+  landmarks: RefObject<Landmarks | null>; signState: SignState; mode: string; enabled: boolean; fps: number | null
+  compact: boolean; countdown: number | null
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [imgKey, setImgKey] = useState(0)
@@ -122,7 +125,7 @@ export function CameraPanel({ landmarks, signState, mode, fps, compact, countdow
             initial={{ x: '-100%' }} animate={{ x: '300%' }} transition={{ duration: 1.3, repeat: Infinity, ease: 'easeInOut' }} />
         )}
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-ink/85 to-transparent px-5 pb-4 pt-10">
-          <span className="text-[15px] font-bold">{caption(signState, mode)}</span>
+          <span className="text-[15px] font-bold">{caption(signState, mode, enabled)}</span>
           {fps !== null && <span className="eyebrow text-bone/50">{fps.toFixed(0)} fps</span>}
         </div>
       </motion.div>

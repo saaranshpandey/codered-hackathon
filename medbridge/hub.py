@@ -11,15 +11,15 @@ from medbridge import metrics
 from medbridge.translate import literal
 
 PATIENT_ACTIONS = {"mode.set", "candidate.pick", "sign.pick", "sign.remove", "draft.edit",
-                   "draft.confirm", "draft.clear", "sign.start", "sign.done"}
+                   "draft.confirm", "draft.clear", "sign.start", "sign.done", "sign.enable"}
 DOCTOR_ACTIONS = {"caption.correct", "asr.pause", "asr.resume", "session.end"}
 
 
-def _fresh(mode="natural", asr_state="listening"):
+def _fresh(mode="natural", asr_state="listening", sign_enabled=True):
     return {
         "captions": [], "interim": None, "messages": [],
         "asr": {"state": asr_state},
-        "sign": {"mode": mode, "state": "idle"},
+        "sign": {"mode": mode, "state": "idle", "enabled": sign_enabled},  # enabled: the patient's on/off switch
         "natural": None, "precise": [],
         "draft": {"text": "", "source": "", "edited": False},
         "signing": None,  # doctor's latest caption as signing motion: {caption_id, status, words, frames, fps}
@@ -33,14 +33,17 @@ def _natural_source(candidate):
 class Hub:
     def __init__(self, broadcast, translate, on_mode=None, on_asr_pause=None, on_sign_done=None, on_sign_start=None,
                  on_final_caption=None,
-                 precise_threshold=0.3, natural_min_score=-1.0, phrase_min_score=-1.5, async_translate=False):
+                 precise_threshold=0.3, natural_min_score=-1.0, phrase_min_score=-1.5, async_translate=False,
+                 modes=("natural", "precise")):
         self.broadcast, self.translate = broadcast, translate
         self.on_mode, self.on_asr_pause, self.on_sign_done = on_mode, on_asr_pause, on_sign_done
         self.on_sign_start = on_sign_start
+        self.on_sign_enable = None  # called with True/False when the patient switches sign recognition on or off
         self.on_final_caption = on_final_caption
         self.precise_threshold, self.natural_min_score = precise_threshold, natural_min_score
         self.phrase_min_score = phrase_min_score
         self.async_translate = async_translate
+        self.modes = modes  # the sign modes this server runs; a mode.set to any other mode is ignored
         self.lock = threading.RLock()
         self.state = _fresh()
         self._next_id = 0
@@ -135,8 +138,8 @@ class Hub:
 
     def on_sign_prediction(self, seg_id, topk, latency_ms=None):
         with self.lock:
-            if self.state["sign"]["mode"] == "natural":
-                return
+            if self.state["sign"]["mode"] == "natural" or not self.state["sign"]["enabled"]:
+                return  # also drops a sign that finished after the patient switched recognition off
             uncertain = not topk or topk[0]["p"] < self.precise_threshold
             self.state["precise"].append({"seg_id": seg_id, "topk": topk, "uncertain": uncertain,
                                           "chosen": None if uncertain else topk[0]["label"],
@@ -152,7 +155,7 @@ class Hub:
             return
         with self.lock:
             s = self.state
-            if kind == "mode.set" and msg.get("mode") in ("natural", "precise"):
+            if kind == "mode.set" and msg.get("mode") in self.modes:
                 s["sign"]["mode"] = msg["mode"]
                 self._clear_draft()
                 if self.on_mode:
@@ -195,6 +198,12 @@ class Hub:
                 if self.on_sign_done:
                     self.on_sign_done()
                 return
+            elif kind == "sign.enable" and isinstance(msg.get("on"), bool):
+                s["sign"]["enabled"] = msg["on"]
+                if not msg["on"]:
+                    s["sign"]["state"] = "idle"
+                if self.on_sign_enable:
+                    self.on_sign_enable(msg["on"])
             elif kind == "caption.correct":
                 for c in s["captions"]:
                     if c["id"] == msg.get("id") and str(msg.get("text", "")).strip():
@@ -208,5 +217,5 @@ class Hub:
                 if self.on_asr_pause:
                     self.on_asr_pause(paused)
             elif kind == "session.end":
-                self.state = _fresh(s["sign"]["mode"], s["asr"]["state"])
+                self.state = _fresh(s["sign"]["mode"], s["asr"]["state"], s["sign"]["enabled"])
             self._publish()

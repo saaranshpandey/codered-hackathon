@@ -28,8 +28,10 @@ def test_engine_events_from_threads_reach_both_views(app):
 def test_patient_confirm_reaches_doctor(app):
     with TestClient(app) as c, c.websocket_connect("/ws?role=doctor") as doc, c.websocket_connect("/ws?role=patient") as pat:
         doc.receive_json(); pat.receive_json()
-        app.state.hub.on_sentence({"seg_id": 1, "latency_ms": 5,
-                                   "candidates": [{"text": "My stomach hurts.", "score": -0.3, "rel_score": 1.0}]})
+        # Natural signing is disabled in the app for now, so the draft is typed instead of coming from a signed sentence:
+        # app.state.hub.on_sentence({"seg_id": 1, "latency_ms": 5,
+        #                            "candidates": [{"text": "My stomach hurts.", "score": -0.3, "rel_score": 1.0}]})
+        pat.send_json({"type": "draft.edit", "text": "My stomach hurts."})
         doc.receive_json(); pat.receive_json()
         pat.send_json({"type": "draft.confirm"})
         assert doc.receive_json()["state"]["messages"][0]["text"] == "My stomach hurts."
