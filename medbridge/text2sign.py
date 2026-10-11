@@ -1,9 +1,13 @@
 """Doctor's words -> signing motion for the patient's 3D figure.
 
 Word-by-word: each word is mapped to an ASL Citizen sign and played with the motion of a Deaf signer
-from that dataset (MediaPipe landmarks, local cache). Words without a local sign are fetched one at a
-time from sign.mt (text -> pose, often fingerspelled) if enabled; otherwise they are shown as text.
-This is not ASL grammar, and the UI says so.
+from that dataset (MediaPipe landmarks, local cache). Words without a local sign are fetched from sign.mt
+(text -> pose, often fingerspelled) if enabled; otherwise they are shown as text.
+This is not ASL grammar.
+
+Speed: a sign that is not cached yet costs seconds (one video download plus pose tracking on every frame),
+so signs are looked up side by side on a small thread pool, started early from interim captions, kept in
+memory once built, and long texts are handed out in batches so signing starts before the last word is ready.
 
 Motion layout (shared with sign.mt's pose files): 178 points x (x, y, z)
   0-7    body: L/R shoulder, L/R elbow, L/R wrist, L/R hip   (person's left/right)
@@ -12,8 +16,11 @@ Motion layout (shared with sign.mt's pose files): 178 points x (x, y, z)
 Missing points are NaN.
 """
 import base64
+import collections
+import concurrent.futures
 import contextlib
 import csv
+import importlib.util
 import logging
 import os
 import re
@@ -152,28 +159,40 @@ def trim_to_hands(seq, pad=3):
     return seq[max(0, idx[0] - pad): idx[-1] + 1 + pad] if len(idx) else seq
 
 
+def hand_coverage(seq, min_frames=8):
+    """Share of frames with a tracked hand, counted from the first such frame to the last. Signers rest their
+    hands before and after a sign, so the share over the whole clip is low even when tracking is perfect."""
+    present = ~np.isnan(seq[:, LH:, 0]).all(axis=1)
+    idx = np.where(present)[0]
+    return float(present[idx[0]:idx[-1] + 1].mean()) if len(idx) >= min_frames else 0.0
+
+
 def _blend(a, b, t):
     a2 = np.where(np.isnan(a), b, a)
     b2 = np.where(np.isnan(b), a, b)
     return a2 + (b2 - a2) * t
 
 
-def assemble(segments, fps=30, transition=8, hold=18):
+def assemble(segments, fps=30, transition=8, hold=18, prev=None, offset=0):
     """segments: [(word, gloss, source, seq or None)] -> (motion (N, 178, 3), timeline).
-    Signs are joined with eased transitions; words without motion hold the last pose briefly."""
+    Signs are joined with eased transitions; words without motion hold the last pose briefly.
+    To continue an earlier batch, pass its last frame as `prev` and its frame count so far as `offset`:
+    the motion returned is only the new frames, and the timeline keeps counting from `offset`."""
     frames, timeline = [], []
     empty = np.full((N_POINTS, 3), np.nan, np.float32)
+    last = prev
     for word, gloss, source, seq in segments:
         if seq is None:
-            seq = np.repeat((frames[-1] if frames else empty)[None], hold, axis=0)
-        if frames and transition:
-            last, first = frames[-1], seq[0]
+            seq = np.repeat((last if last is not None else empty)[None], hold, axis=0)
+        if last is not None and transition:
+            first = seq[0]
             for k in range(1, transition + 1):
                 t = k / (transition + 1)
                 frames.append(_blend(last, first, t * t * (3 - 2 * t)))
         start = len(frames)
         frames.extend(seq)
-        timeline.append({"word": word, "gloss": gloss, "source": source, "start": start, "end": len(frames)})
+        last = frames[-1]
+        timeline.append({"word": word, "gloss": gloss, "source": source, "start": offset + start, "end": offset + len(frames)})
     motion = np.array(frames, np.float32) if frames else np.zeros((0, N_POINTS, 3), np.float32)
     return motion, timeline
 
@@ -196,16 +215,45 @@ class AslCitizenSigns:
             for row in list(csv.reader(f))[1:]:
                 self.videos.setdefault(row[2].strip(), []).append(row[1])
         self._zip = None
+        self._zip_lock = threading.Lock()  # one shared zip: its index is read once, downloads take turns (they are short)
+        self._locks = {}
         self.lock = threading.Lock()
 
+    def connect(self):
+        """Read the dataset zip's index (about a second) ahead of the first download."""
+        self._download(None)
+
+    def _download(self, name):
+        from remotezip import RemoteZip
+
+        with self._zip_lock:
+            try:
+                if self._zip is None:
+                    self._zip = RemoteZip(self.ZIP)
+                return self._zip.read(f"ASL_Citizen/videos/{name}") if name else None
+            except Exception:
+                self._zip = None
+                raise
+
+    def has(self, gloss):
+        return (self.cache / f"{gloss}.npy").exists()
+
     def get(self, gloss):
+        """Thread-safe. Different signs are built side by side; one sign is never built twice at once."""
         path = self.cache / f"{gloss}.npy"
         if path.exists():
             return np.load(path)
         with self.lock:
+            building = self._locks.setdefault(gloss, threading.Lock())
+        with building:
+            if path.exists():
+                return np.load(path)
             seq = self._build(gloss)
-        if seq is not None:
-            np.save(path, seq)
+            if seq is not None:  # write to a temp file first, so no other thread loads a half-written sign
+                fd, tmp = tempfile.mkstemp(suffix=".tmp", dir=self.cache)
+                with os.fdopen(fd, "wb") as f:
+                    np.save(f, seq)
+                os.replace(tmp, path)
         return seq
 
     @contextlib.contextmanager
@@ -222,17 +270,13 @@ class AslCitizenSigns:
     def _build(self, gloss):
         import cv2
         import mediapipe as mp
-        from remotezip import RemoteZip
 
         best, best_score = None, -1.0
         for name in self.videos.get(gloss, [])[:3]:
             try:
-                if self._zip is None:
-                    self._zip = RemoteZip(self.ZIP)
-                data = self._zip.read(f"ASL_Citizen/videos/{name}")
+                data = self._download(name)
             except Exception as e:  # network or zip error: try the next clip
                 log.warning("ASL Citizen fetch failed for %s: %s", gloss, e)
-                self._zip = None
                 continue
             frames = []
             with self._temp_clip() as tmp:
@@ -249,10 +293,10 @@ class AslCitizenSigns:
             if not frames:
                 continue
             seq = np.array(frames)
-            hands = (~np.isnan(seq[:, LH:, 0]).all(axis=1)).mean()
-            if hands > best_score:
-                best, best_score = resample(trim_to_hands(seq), fps, 30), hands
-            if best_score > 0.8:
+            score = hand_coverage(seq)
+            if score > best_score:
+                best, best_score = resample(trim_to_hands(seq), fps, 30), score
+            if best_score >= 0.8:  # hands tracked through the sign: good enough, the other clips are not needed
                 break
         return best
 
@@ -266,6 +310,9 @@ class SignMT:
         self.cache = Path(root) / "data/signlex/signmt"
         self.cache.mkdir(parents=True, exist_ok=True)
         self.timeout = timeout
+        self.available = importlib.util.find_spec("pose_format") is not None
+        if not self.available:
+            log.warning("pose_format is not installed: words without a local sign are shown as text only")
 
     def get(self, word):
         safe = re.sub(r"[^a-z0-9]", "_", word.lower())
@@ -273,6 +320,8 @@ class SignMT:
         if path.exists():
             z = np.load(path)
             return z["seq"], float(z["fps"])
+        if not self.available:
+            return None
         try:
             from pose_format import Pose
 
@@ -290,18 +339,101 @@ class SignMT:
 
 
 class Builder:
-    def __init__(self, lexicon, local, signmt=None):
+    """Text -> signing motion. Thread-safe: signs are looked up on a thread pool and kept in memory."""
+
+    def __init__(self, lexicon, local, signmt=None, workers=4, keep=400):
         self.lexicon, self.local, self.signmt = lexicon, local, signmt
+        self.pool = concurrent.futures.ThreadPoolExecutor(workers, thread_name_prefix="signs")
+        self.keep = keep
+        self.lock = threading.Lock()
+        self.ready = collections.OrderedDict()  # ("aslc", gloss) | ("signmt", word) -> motion, ready to join
+        self.inflight = {}                      # same keys -> Future, for lookups that are running
+
+    def _lookup(self, word, gloss):
+        """Future of (source, motion or None): the local sign for `gloss`, or sign.mt for a word without one."""
+        key = ("aslc", gloss) if gloss else ("signmt", word)
+        with self.lock:
+            if key in self.ready:
+                self.ready.move_to_end(key)
+                done = concurrent.futures.Future()
+                done.set_result((key[0], self.ready[key]))
+                return done
+            if not gloss and self.signmt is None:
+                done = concurrent.futures.Future()
+                done.set_result(("none", None))
+                return done
+            if key not in self.inflight:
+                self.inflight[key] = self.pool.submit(self._work, key)
+            return self.inflight[key]
+
+    def _work(self, key):
+        kind, name = key
+        try:
+            if kind == "aslc":
+                seq = self.local.get(name)
+            else:
+                got = self.signmt.get(name)
+                seq = resample(got[0], got[1], 30) if got else None
+            if seq is None or not len(seq):  # not kept, so a failed download is tried again next time
+                return "none", None
+            seq = fill_gaps(normalize(seq))
+            with self.lock:
+                self.ready[key] = seq
+                while len(self.ready) > self.keep:
+                    self.ready.popitem(last=False)
+            return kind, seq
+        finally:
+            with self.lock:
+                self.inflight.pop(key, None)
+
+    def warm(self):
+        """Do the one-off connection work now, in the background, instead of on the first new word."""
+        connect = getattr(self.local, "connect", None)
+        if connect:
+            self.pool.submit(connect).add_done_callback(
+                lambda f: f.exception() and log.warning("sign dictionary not reachable yet: %s", f.exception()))
+
+    def prefetch(self, text):
+        """Start fetching the local signs for words that are probably coming (an interim caption), without
+        waiting. Unfinished text is never sent to sign.mt."""
+        has = getattr(self.local, "has", None)
+        for word, gloss in text_to_glosses(text, self.lexicon):
+            if gloss and not (has and has(gloss)):
+                self._lookup(word, gloss)
+
+    def stream(self, text, batch=12, patience=0.05, max_wait=8.0):
+        """Yield (motion, timeline) batches in word order; timeline frame numbers count from the start of the text.
+        A batch closes at `batch` words, or when the next word is not ready within `patience` seconds, so signs
+        that are ready are never held back by a slow one. A sign still not ready `max_wait` seconds after it is
+        needed is left out this time (shown as text); it keeps building and is there the next time."""
+        lookups = [(word, gloss, self._lookup(word, gloss)) for word, gloss in text_to_glosses(text, self.lexicon)]
+        segments, last, offset = [], None, 0
+
+        def flush():
+            nonlocal segments, last, offset
+            motion, timeline = assemble(segments, prev=last, offset=offset)
+            segments, last, offset = [], motion[-1], offset + len(motion)
+            return motion, timeline
+
+        for word, gloss, lookup in lookups:
+            if segments:
+                try:
+                    lookup.result(timeout=patience)
+                except concurrent.futures.TimeoutError:
+                    yield flush()
+            try:
+                source, seq = lookup.result(timeout=max_wait)
+            except concurrent.futures.TimeoutError:
+                source, seq = "none", None
+            if seq is None and gloss and self.signmt is not None and lookup.done():  # the local sign could not be fetched
+                source, seq = self._lookup(word, None).result()
+            segments.append((word, gloss, source, seq))
+            if len(segments) >= batch:
+                yield flush()
+        if segments:
+            yield flush()
 
     def build(self, text):
-        segments = []
-        for word, gloss in text_to_glosses(text, self.lexicon):
-            seq = self.local.get(gloss) if gloss else None
-            source = "aslc"
-            if seq is None and self.signmt is not None:
-                got = self.signmt.get(word)
-                seq, source = (resample(got[0], got[1], 30), "signmt") if got else (None, "none")
-            elif seq is None:
-                source = "none"
-            segments.append((word, gloss, source, fill_gaps(normalize(seq)) if seq is not None else None))
-        return assemble(segments)
+        """The whole text in one piece: (motion, timeline)."""
+        parts = list(self.stream(text, batch=10 ** 9, patience=None, max_wait=None))
+        return parts[0] if parts else assemble([])

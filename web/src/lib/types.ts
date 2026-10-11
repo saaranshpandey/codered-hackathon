@@ -15,8 +15,9 @@ export type State = {
   draft: { text: string; source: string; edited: boolean }
   signing: Signing | null
 }
+/** Motion for a caption arrives in batches: `frames` and `words` grow until `done`. `build` changes when a caption is rebuilt. */
 export type Signing = {
-  caption_id: number; status: 'building' | 'ready' | 'empty' | 'error'; frames: number; fps: number
+  caption_id: number; status: 'building' | 'ready' | 'empty' | 'error'; frames: number; fps: number; build?: number; done?: boolean
   words: { word: string; gloss: string | null; source: 'aslc' | 'signmt' | 'none'; start: number; end: number }[] | null
 }
 /** The word of a caption that the mascot is signing right now: an index into that caption's `Signing.words`. */

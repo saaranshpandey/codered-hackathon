@@ -88,6 +88,48 @@ def test_patient_controls_and_camera_are_local_only_by_default():
             assert ws.receive_json()["type"] == "state"
 
 
+def test_long_caption_motion_is_served_in_batches_as_it_is_built():
+    import time
+
+    import numpy as np
+
+    from medbridge.server import create_app
+
+    release = threading.Event()
+
+    class StreamBuilder:
+        def stream(self, text):
+            yield np.zeros((12, 178, 3), np.float32), [{"word": "where", "gloss": "WHERE", "source": "aslc", "start": 0, "end": 12}]
+            release.wait(2)
+            yield np.ones((8, 178, 3), np.float32), [{"word": "hurt", "gloss": "HURT", "source": "aslc", "start": 12, "end": 20}]
+
+    app = create_app(engines=False, patient_local_only=False, sign_builder=StreamBuilder())
+    hub = app.state.hub
+
+    def wait_for(check):
+        for _ in range(100):
+            if check(hub.state.get("signing") or {}):
+                return hub.state["signing"]
+            time.sleep(0.02)
+        raise AssertionError(hub.state.get("signing"))
+
+    with TestClient(app) as c:
+        hub.on_caption("final", 0, "where hurt")
+        cid = hub.state["captions"][0]["id"]
+        sig = wait_for(lambda s: s.get("status") == "ready")          # the first batch is playable right away
+        assert sig["frames"] == 12 and sig["done"] is False and [w["word"] for w in sig["words"]] == ["where"]
+        first = c.get(f"/api/signing/{cid}").json()
+        assert first["frames"] == 12 and first["start"] == 0 and first["done"] is False
+        release.set()
+        sig = wait_for(lambda s: s.get("done"))
+        assert sig["status"] == "ready" and sig["frames"] == 20 and [w["word"] for w in sig["words"]] == ["where", "hurt"]
+        rest = c.get(f"/api/signing/{cid}?start=12").json()            # only the frames the page does not have yet
+        assert rest["frames"] == 8 and rest["start"] == 12 and rest["total"] == 20 and rest["done"] is True
+        assert rest["build"] == first["build"]
+        part = c.get(f"/api/signing/{cid}?start=0&limit=5").json()       # a long motion is handed out in pieces
+        assert part["frames"] == 5 and part["total"] == 20
+
+
 def test_final_caption_is_built_into_signing_motion_and_served():
     import time
 

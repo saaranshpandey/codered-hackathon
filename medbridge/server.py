@@ -55,14 +55,18 @@ def _env(name, default):
 
 
 class SignWorker:
-    """Builds the signing motion for the doctor's newest caption in the background. Only the latest
-    pending caption is built; finished payloads are kept in memory (never on disk)."""
+    """Builds the signing motion for the doctor's newest caption in the background and hands it out in batches,
+    so signing can start before a long caption is finished. Only the newest caption is built: when another one
+    arrives, the rest of the current one is dropped. Motion is kept in memory (never on disk)."""
 
     def __init__(self, hub, builder, keep=20):
         self.hub, self.builder, self.keep = hub, builder, keep
-        self.payloads = {}
+        self.motions = {}  # caption_id -> {"build", "chunks", "frames", "words", "done"}
+        self.builds = 0    # counts builds, so a client can tell a rebuilt caption (a correction) from more batches
         self.pending = None
         self.cv = threading.Condition()
+        if hasattr(builder, "warm"):
+            builder.warm()
         threading.Thread(target=self._run, daemon=True, name="signing").start()
 
     def submit(self, caption_id, text):
@@ -70,26 +74,61 @@ class SignWorker:
             self.pending = (caption_id, text)
             self.cv.notify()
 
-    def _run(self):
-        from medbridge.text2sign import payload
+    def prefetch(self, text):
+        """An interim caption: start fetching its signs now, so they are ready when the final caption arrives."""
+        if hasattr(self.builder, "prefetch"):
+            self.builder.prefetch(text)
 
+    def chunk(self, caption_id, start=0, limit=720):
+        """The motion from frame `start` on, as far as it has been built, at most `limit` frames (24 s) at a time:
+        the page asks again for the rest, so even a long caption starts playing after one small response."""
+        import numpy as np
+
+        from medbridge.text2sign import N_POINTS, payload
+
+        with self.cv:
+            m = self.motions.get(caption_id)
+            if m is None:
+                return None
+            chunks, words, meta = list(m["chunks"]), list(m["words"]), {"build": m["build"], "total": m["frames"], "done": m["done"]}
+        motion = np.concatenate(chunks)[start:start + limit] if chunks else np.zeros((0, N_POINTS, 3), np.float32)
+        return {**payload(caption_id, motion, words), "start": start, **meta}
+
+    def _publish(self, caption_id, m, status):
+        self.hub.on_signing({"caption_id": caption_id, "status": status, "words": list(m["words"]) or None,
+                             "frames": m["frames"], "fps": 30, "build": m["build"], "done": m["done"]})
+
+    def _run(self):
         while True:
             with self.cv:
                 self.cv.wait_for(lambda: self.pending is not None)
                 caption_id, text = self.pending
                 self.pending = None
-            self.hub.on_signing({"caption_id": caption_id, "status": "building", "words": None, "frames": 0, "fps": 30})
+                self.builds += 1
+                m = self.motions[caption_id] = {"build": self.builds, "chunks": [], "frames": 0, "words": [], "done": False}
+                for old in sorted(self.motions)[:-self.keep]:
+                    del self.motions[old]
+            self._publish(caption_id, m, "building")
+            failed = False
             try:
-                motion, timeline = self.builder.build(text)
+                # A builder without stream() (a test double) gives the whole motion as one batch.
+                batches = self.builder.stream(text) if hasattr(self.builder, "stream") else [self.builder.build(text)]
+                for motion, timeline in batches:
+                    with self.cv:
+                        m["chunks"].append(motion)
+                        m["frames"] += int(len(motion))
+                        m["words"] += timeline
+                        newer = self.pending is not None
+                    if newer:  # the doctor has said something else: the rest of this caption is not built
+                        break
+                    if m["frames"]:
+                        self._publish(caption_id, m, "ready")
             except Exception:
                 log.exception("signing build failed")
-                self.hub.on_signing({"caption_id": caption_id, "status": "error", "words": None, "frames": 0, "fps": 30})
-                continue
-            self.payloads[caption_id] = payload(caption_id, motion, timeline)
-            for old in sorted(self.payloads)[:-self.keep]:
-                del self.payloads[old]
-            self.hub.on_signing({"caption_id": caption_id, "status": "ready" if len(motion) else "empty",
-                                 "words": timeline, "frames": int(len(motion)), "fps": 30})
+                failed = True
+            with self.cv:
+                m["done"] = True
+            self._publish(caption_id, m, "error" if failed and not m["frames"] else "ready" if m["frames"] else "empty")
 
 
 def make_sign_builder():
@@ -180,6 +219,7 @@ def create_app(engines=True, patient_local_only=None, sign_builder=None):
     signer = SignWorker(hub, sign_builder) if sign_builder is not None else None
     if signer:
         hub.on_final_caption = signer.submit
+        hub.on_interim_caption = signer.prefetch
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
@@ -212,8 +252,8 @@ def create_app(engines=True, patient_local_only=None, sign_builder=None):
         return JSONResponse(list(dict.fromkeys(labels)))
 
     @app.get("/api/signing/{caption_id}")
-    def signing(caption_id: int):
-        body = signer.payloads.get(caption_id) if signer else None
+    def signing(caption_id: int, start: int = 0, limit: int = 720):
+        body = signer.chunk(caption_id, max(0, start), max(1, limit)) if signer else None
         return JSONResponse(body) if body else PlainTextResponse("not found", status_code=404)
 
     @app.get("/video.mjpg")

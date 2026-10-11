@@ -22,7 +22,9 @@ def _fresh(mode="natural", asr_state="listening", sign_enabled=True):
         "sign": {"mode": mode, "state": "idle", "enabled": sign_enabled},  # enabled: the patient's on/off switch
         "natural": None, "precise": [],
         "draft": {"text": "", "source": "", "edited": False},
-        "signing": None,  # doctor's latest caption as signing motion: {caption_id, status, words, frames, fps}
+        # doctor's latest caption as signing motion: {caption_id, status, words, frames, fps, build, done}.
+        # frames and words grow batch by batch until done.
+        "signing": None,
     }
 
 
@@ -40,6 +42,7 @@ class Hub:
         self.on_sign_start = on_sign_start
         self.on_sign_enable = None  # called with True/False when the patient switches sign recognition on or off
         self.on_final_caption = on_final_caption
+        self.on_interim_caption = None  # called with the text of each interim caption (used to fetch signs early)
         self.precise_threshold, self.natural_min_score = precise_threshold, natural_min_score
         self.phrase_min_score = phrase_min_score
         self.async_translate = async_translate
@@ -104,6 +107,8 @@ class Hub:
         with self.lock:
             if kind == "interim":
                 self.state["interim"] = {"id": utt_id, "text": text}
+                if self.on_interim_caption:
+                    self.on_interim_caption(text)
             else:
                 self.state["interim"] = None
                 self._add_caption(text)

@@ -14,7 +14,11 @@ import { Icon } from './ui'
 const P = 178
 const DEPTH = 0.22 // MediaPipe depth is noisy and exaggerated; compress it for display
 const SMOOTH = 0.55 // per-frame smoothing of landmark jitter (1 = none)
-type Motion = { captionId: number; fps: number; frames: number; data: Float32Array; words: NonNullable<Signing['words']> }
+// `done` is false while later batches of a long caption are still being prepared; `key` names one build of one caption.
+type Motion = {
+  key: string; captionId: number; fps: number; frames: number; data: Float32Array; words: NonNullable<Signing['words']>; done: boolean
+}
+const motionKey = (captionId: number, build?: number) => `${captionId}:${build ?? 0}`
 
 function decode(b64: string) {
   const bin = atob(b64)
@@ -31,19 +35,49 @@ export function SigningStage({ signing, onWord }: { signing: Signing | null; onW
   const [speed, setSpeed] = useState(1)
   const [loaded, setLoaded] = useState<Motion | null>(null)
 
-  // Fetch the motion for the newest caption once it is ready.
+  // Fetch the motion for the newest caption. A long caption arrives in batches: playback starts with the first
+  // batch, and each later batch is fetched from where the last one ended and appended.
+  const latest = useRef(signing)
+  const fetching = useRef(false)
   useEffect(() => {
-    if (!signing || signing.status !== 'ready') return
-    let cancelled = false
-    fetch(`/api/signing/${signing.caption_id}`).then((r) => (r.ok ? r.json() : null)).then((body) => {
-      if (!body || cancelled) return
-      const m: Motion = { captionId: body.caption_id, fps: body.fps, frames: body.frames, data: decode(body.data), words: body.words }
-      motionRef.current = m
-      clock.current = { t: 0, playing: true, speed: clock.current.speed }
-      setLoaded(m)
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [signing?.caption_id, signing?.status]) // eslint-disable-line react-hooks/exhaustive-deps
+    latest.current = signing
+    // The motion is complete once the server says the caption is done and every frame of it is here.
+    const settle = () => {
+      const s = latest.current, m = motionRef.current
+      if (s && m && m.key === motionKey(s.caption_id, s.build) && s.done !== false && m.frames >= s.frames) m.done = true
+    }
+    settle()
+    if (fetching.current) return
+    fetching.current = true
+    const pump = async () => {
+      try {
+        for (;;) {
+          const s = latest.current
+          if (!s || s.status !== 'ready') break
+          const key = motionKey(s.caption_id, s.build)
+          const have = motionRef.current?.key === key ? motionRef.current.frames : 0
+          if (s.frames <= have) break
+          const r = await fetch(`/api/signing/${s.caption_id}?start=${have}`)
+          if (!r.ok) break
+          const body = await r.json()
+          const chunk = decode(body.data)
+          const start: number = body.start ?? 0, bodyKey = motionKey(body.caption_id, body.build)
+          const m = motionRef.current
+          if (m && m.key === bodyKey && start === m.frames) {
+            const data = new Float32Array(m.data.length + chunk.length)
+            data.set(m.data); data.set(chunk, m.data.length)
+            motionRef.current = { ...m, data, frames: m.frames + body.frames, words: body.words, done: false }
+          } else if (start === 0) {
+            motionRef.current = { key: bodyKey, captionId: body.caption_id, fps: body.fps, frames: body.frames, data: chunk, words: body.words, done: false }
+            clock.current = { t: 0, playing: true, speed: clock.current.speed }
+          } else break // a batch for something we no longer hold: the next state update starts over
+          settle()
+          setLoaded(motionRef.current)
+        }
+      } catch { /* network hiccup: the next state update tries again */ } finally { fetching.current = false }
+    }
+    void pump()
+  }, [signing?.caption_id, signing?.build, signing?.status, signing?.frames, signing?.done]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { clock.current.speed = speed }, [speed])
 
@@ -118,7 +152,8 @@ export function SigningStage({ signing, onWord }: { signing: Signing | null; onW
       if (m && m.frames > 0) {
         if (c.playing) {
           c.t += dt * c.speed
-          if (c.t * m.fps >= m.frames + m.fps) c.playing = false // hold the last pose for 1 s
+          if (!m.done) c.t = Math.min(c.t, m.frames / m.fps)           // the next batch is not here yet: wait on the last pose
+          else if (c.t * m.fps >= m.frames + m.fps) c.playing = false // hold the last pose for 1 s
         }
         fi = Number.isFinite(pinned) ? Math.min(m.frames - 1, pinned) : Math.min(m.frames - 1, Math.floor(c.t * m.fps))
       }

@@ -111,7 +111,7 @@ def test_builder_uses_dictionary_then_signmt_then_text():
     b = Builder(build_lexicon(GLOSSES), Dict(), SignMT())
     motion, timeline = b.build("Are you okay? Chest pain")
     assert [(w["word"], w["source"]) for w in timeline] == [("you", "aslc"), ("okay", "none"), ("chest", "signmt"), ("pain", "none")]
-    assert calls == ["okay", "chest", "pain"]   # only words missing from the local dictionary leave the Mac
+    assert sorted(calls) == ["chest", "okay", "pain"]   # only words missing from the local dictionary leave the Mac
     assert motion.shape[1:] == (178, 3)
 
 
@@ -143,3 +143,130 @@ def test_fill_gaps_interpolates_short_tracking_dropouts_only():
     assert out[12, 157, 0] == pytest.approx(12)
     assert np.isnan(out[25, 157, 0])
     assert np.isnan(out[5, 0, 0])     # points never present stay missing
+
+
+def _clip(n, value=0.0):
+    clip = np.full((n, 178, 3), value, np.float32)
+    clip[:, 0] = [300, 200, 0]; clip[:, 1] = [100, 200, 0]
+    return clip
+
+
+class _Signs:
+    """A local dictionary stand-in: one clip per known sign, with an optional delay per lookup."""
+
+    def __init__(self, delays=None):
+        self.delays, self.calls = delays or {}, []
+
+    def has(self, gloss):
+        return False
+
+    def get(self, gloss):
+        import time
+        self.calls.append(gloss)
+        time.sleep(self.delays.get(gloss, 0))
+        return _clip(10 + len(gloss)) if gloss in ("YOU", "FEEL", "PAIN", "HURT", "MEDICINE", "HELLO") else None
+
+
+def test_assemble_can_continue_from_an_earlier_batch():
+    from medbridge.text2sign import assemble
+
+    segs = [("you", "YOU", "aslc", _clip(10, 0.0)), ("chest", None, "none", None), ("pain", "PAIN", "aslc", _clip(12, 1.0)),
+            ("hurt", "HURT", "aslc", _clip(9, 2.0))]
+    whole, timeline = assemble(segs)
+    first, t1 = assemble(segs[:2])
+    rest, t2 = assemble(segs[2:], prev=first[-1], offset=len(first))
+    assert np.array_equal(np.concatenate([first, rest]), whole, equal_nan=True)
+    assert t1 + t2 == timeline
+
+
+def test_hand_coverage_counts_only_the_signing_span():
+    from medbridge.text2sign import LH, hand_coverage
+
+    seq = np.full((40, 178, 3), np.nan, np.float32)
+    seq[10:30, LH:LH + 21] = 1.0          # hands rest (untracked) before and after the sign
+    assert hand_coverage(seq) == 1.0
+    seq[18:22, LH:LH + 21] = np.nan       # a 4-frame dropout inside the sign
+    assert hand_coverage(seq) == pytest.approx(16 / 20)
+    seq[:] = np.nan
+    assert hand_coverage(seq) == 0.0
+
+
+def test_builder_stream_gives_the_same_motion_as_build_in_ordered_batches():
+    from medbridge.text2sign import Builder, build_lexicon
+
+    b = Builder(build_lexicon(GLOSSES), _Signs())
+    text = "Hello, do you feel pain? Does the medicine hurt you?"
+    motion, timeline = b.build(text)
+    batches = list(b.stream(text, batch=2))
+    assert [len(t) for _, t in batches] == [2, 2, 2, 1]
+    assert np.array_equal(np.concatenate([m for m, _ in batches]), motion, equal_nan=True)
+    assert [w for _, t in batches for w in t] == timeline
+    assert timeline[-1]["end"] == len(motion) and [w["word"] for w in timeline][:3] == ["hello", "you", "feel"]
+
+
+def test_builder_looks_signs_up_side_by_side_and_keeps_them_in_memory():
+    import time
+
+    from medbridge.text2sign import Builder, build_lexicon
+
+    signs = _Signs(delays={g: 0.25 for g in ("YOU", "FEEL", "PAIN", "HURT")})
+    b = Builder(build_lexicon(GLOSSES), signs, workers=4)
+    t0 = time.perf_counter()
+    b.build("you feel pain hurt")
+    assert time.perf_counter() - t0 < 0.7            # four 0.25 s lookups, not one after another
+    signs.calls.clear()
+    t0 = time.perf_counter()
+    b.build("you feel pain hurt you")
+    assert time.perf_counter() - t0 < 0.1 and signs.calls == []   # second time: straight from memory
+
+
+def test_stream_does_not_hold_ready_signs_behind_a_slow_one():
+    import time
+
+    from medbridge.text2sign import Builder, build_lexicon
+
+    b = Builder(build_lexicon(GLOSSES), _Signs(delays={"PAIN": 0.6}))
+    t0 = time.perf_counter()
+    stream = b.stream("you feel pain hurt")
+    _, first = next(stream)
+    assert [w["word"] for w in first] == ["you", "feel"] and time.perf_counter() - t0 < 0.4
+    rest = [w["word"] for _, t in stream for w in t]
+    assert rest == ["pain", "hurt"]
+
+
+def test_prefetch_starts_local_lookups_early_and_never_asks_signmt():
+    import time
+
+    from medbridge.text2sign import Builder, build_lexicon
+
+    asked = []
+
+    class SignMT:
+        def get(self, word):
+            asked.append(word)
+            return None
+
+    signs = _Signs()
+    b = Builder(build_lexicon(GLOSSES), signs, SignMT())
+    b.prefetch("Do you feel chest")                  # an interim caption, still being spoken
+    for _ in range(100):
+        if sorted(signs.calls) == ["FEEL", "YOU"] and not b.inflight:
+            break
+        time.sleep(0.01)
+    assert sorted(signs.calls) == ["FEEL", "YOU"] and asked == []
+    signs.calls.clear()
+    _, timeline = b.build("Do you feel chest pain?")
+    assert signs.calls == ["PAIN"]                   # the prefetched signs are not fetched again
+    assert asked == ["chest"] and [w["source"] for w in timeline] == ["aslc", "aslc", "none", "aslc"]
+
+
+def test_stream_leaves_out_a_sign_that_takes_too_long_and_has_it_next_time():
+    import time
+
+    from medbridge.text2sign import Builder, build_lexicon
+
+    b = Builder(build_lexicon(GLOSSES), _Signs(delays={"PAIN": 0.5}))
+    words = [w for _, t in b.stream("you pain hurt", max_wait=0.1) for w in t]
+    assert [(w["word"], w["source"]) for w in words] == [("you", "aslc"), ("pain", "none"), ("hurt", "aslc")]
+    time.sleep(0.6)                                  # the slow sign finished in the background
+    assert [w["source"] for w in b.build("you pain hurt")[1]] == ["aslc", "aslc", "aslc"]

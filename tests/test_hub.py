@@ -267,6 +267,14 @@ def test_typed_caption_from_the_doctor_is_stored_and_sent_for_signing():
     assert h.state["captions"][0]["original"] is None and signed == ["Please lie down."]
 
 
+def test_interim_captions_are_offered_for_fetching_signs_early(hub):
+    seen = []
+    hub.on_interim_caption = seen.append
+    hub.on_caption("interim", 0, "Are you")
+    hub.on_caption("final", 0, "Are you in pain?")
+    assert seen == ["Are you"]
+
+
 def test_signing_status_is_published_in_state(hub):
     hub.on_signing({"caption_id": 3, "status": "ready", "frames": 90, "fps": 30,
                     "words": [{"word": "pain", "gloss": "PAIN", "source": "aslc", "start": 0, "end": 40}]})
