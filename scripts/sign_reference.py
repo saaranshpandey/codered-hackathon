@@ -53,7 +53,7 @@ def main():
                 f'<div class="vids">{vids}</div><footer>{html.escape(" · ".join(sorted({g for g, _ in items})))}'
                 f' · <a href="https://www.signingsavvy.com/search/{html.escape(word)}" target="_blank">Signing Savvy</a></footer></article>')
 
-    page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Medbridge · Sign reference</title>
+    page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>SignWave · Sign reference</title>
 <style>
 body{{margin:0;background:#0e0f0c;color:#f2eee6;font:16px/1.4 -apple-system,system-ui,sans-serif;padding:32px}}
 h1{{font:400 40px Georgia,serif;margin:0 0 6px}} p.lead{{color:#f2eee699;max-width:820px}}
@@ -64,7 +64,7 @@ header{{display:flex;justify-content:space-between;align-items:baseline}} h2{{ma
 header span,footer{{font:12px ui-monospace,monospace;color:#f2eee680}} footer a{{color:#f2eee6}}
 .vids{{display:grid;grid-template-columns:1fr 1fr;gap:8px}} video{{width:100%;border-radius:12px;background:#000}}
 </style></head><body>
-<h1>Signs Medbridge can recognize (one sign at a time)</h1>
+<h1>Signs SignWave can recognize (one sign at a time)</h1>
 <p class="lead">Each card shows Deaf signers from the held-out ASL Citizen test set performing the exact sign the model learned.
 Green = the model got every held-out clip right; amber = less than 60%. Start testing with the green ones.
 Sign one word, lower your hands, then sign the next. Hover a video to play it.</p>

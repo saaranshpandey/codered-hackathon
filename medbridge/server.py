@@ -1,4 +1,4 @@
-"""MEDBRIDGE backend: FastAPI app wiring the hub, the camera/sign engines and the doctor ASR.
+"""SignWave backend: FastAPI app wiring the hub, the camera/sign engines and the doctor ASR.
 
 Run: python -m medbridge.server   (settings come from .env, see .env.example)"""
 import asyncio
@@ -246,7 +246,7 @@ def create_app(engines=True, patient_local_only=None, sign_builder=None, voice=N
             threading.Thread(target=start_engines, args=(app, hub), daemon=True, name="startup").start()
         yield
 
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI(title="SignWave", lifespan=lifespan)
     app.state.hub, app.state.clients, app.state.vision = hub, clients, None
 
     @app.get("/")

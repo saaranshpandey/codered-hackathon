@@ -1,4 +1,9 @@
-# MEDBRIDGE
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="web/public/brand/signwave-logo-dark.svg">
+  <img src="web/public/brand/signwave-logo.svg" alt="SignWave" width="340">
+</picture>
+
+# SignWave
 
 Two-way, real-time communication between a Deaf patient who signs American Sign Language (ASL) and a
 speaking clinician in an emergency room. Everything runs live on one MacBook. Nothing is
@@ -9,7 +14,7 @@ pre-recorded, and the AI output is never faked.
 - **Patient → doctor:** the patient signs. The app translates the signing into English candidates, and the patient
   confirms, corrects or rejects them before anything is shown to the doctor as "patient said".
 
-> **Research prototype.** MEDBRIDGE is not a certified medical interpreter. Do not use it for clinical decisions.
+> **Research prototype.** SignWave is not a certified medical interpreter. Do not use it for clinical decisions.
 > Use a qualified ASL interpreter for care.
 
 ## What it can and cannot do

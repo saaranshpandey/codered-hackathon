@@ -1,4 +1,4 @@
-# Testing MEDBRIDGE on one Mac
+# Testing SignWave on one Mac
 
 This guide shows how to test both directions on one MacBook (built-in camera and microphone), with the
 patient and doctor views side by side. Work through the sections in order. Write results in the sheet at the end.
