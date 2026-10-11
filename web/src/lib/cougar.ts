@@ -22,6 +22,7 @@ const FINGERS = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], 
 const C = {
   fur: '#c98f55', furLight: '#f4e4c9', marking: '#3b2416', nose: '#d4847c', jersey: '#c8102e', trim: '#f6f1e7',
   eye: '#ffffff', iris: '#e0a82e', pupil: '#120c08', earInner: '#e9b4a4', mouth: '#4a1d1a', outline: '#1d140e', pad: '#dfae86',
+  logo: '#ffffff',
 }
 
 type Getter = (i: number, out: THREE.Vector3) => boolean
@@ -31,6 +32,30 @@ function toonGradient() {
   tex.minFilter = tex.magFilter = THREE.NearestFilter
   tex.generateMipmaps = false
   tex.needsUpdate = true
+  return tex
+}
+
+// University of Houston interlocking "UH": outlines from the logo's SVG on Wikimedia Commons (489 x 465 units).
+const UH_OUTER = 'M0,0H171V91H145V157H239V91.00H213.51V0H384V91H357V157H489V248H462V374H489V465H319V375H344V358H252V375H278V465H107V375H134V302H79L27.5 255V91H0Z'
+const UH_KEYLINE = 'M13 13H158V78H132V170H252V78H226.5V13H371.5V78H344V170H476V235.5H449V387.5H476.5V452.5H331.5V387.5H357V345H239V387.5H265V452.5H119.5V387.5H147V287.5H83L40.50 251V78H13Z'
+const UH_LETTERS = 'M25 25H146V66H120V235H147.5V277H90L53 245V66H25ZM239 25H359V66H332V245L294 277H238V235H264V66H239V25ZM344 183H464V223H437V400H464V440H344V400H370V333H227V400H252V440H132V400H160V223H132V182.5H252.5V223H227V289H369.5V223.5H344ZM317 276L356 241V276Z'
+
+/** The UH logo as it appears on red (white, with a keyline in the jersey's own red), as an alpha mask.
+ *  Drawn on a canvas so no image file is needed. */
+function jerseyLogo() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512; canvas.height = 488
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.translate(12, 12)                                             // clear margin, so the patch edge stays transparent
+  ctx.scale((canvas.width - 24) / 489, (canvas.height - 24) / 465)
+  for (const [d, color] of [[UH_OUTER, '#fff'], [UH_KEYLINE, '#000'], [UH_LETTERS, '#fff']]) {
+    ctx.fillStyle = color
+    ctx.fill(new Path2D(d))
+  }
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.anisotropy = 4
   return tex
 }
 
@@ -110,6 +135,12 @@ export function createCougar(scene: THREE.Scene) {
   const collar = part(new THREE.TorusGeometry(1, 0.18, 12, 32), C.trim, 0)
   const neck = part(cyl, C.fur, 0)
   root.add(torso, collar, neck)
+  // UH logo on the chest: a patch of sphere just above the jersey, so it follows the torso's shape and lean
+  const logo = new THREE.Mesh(
+    new THREE.SphereGeometry(1.02, 16, 12, Math.PI / 2 - 0.5, 1.0, 0.98, 0.62),
+    new THREE.MeshToonMaterial({ color: C.logo, alphaMap: jerseyLogo(), gradientMap, transparent: true, depthWrite: false }),
+  )
+  torso.add(logo)
 
   // ---- head ---------------------------------------------------------------------------------------
   const head = new THREE.Group()
