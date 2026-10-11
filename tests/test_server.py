@@ -10,6 +10,18 @@ def app():
     return create_app(engines=False, patient_local_only=False)
 
 
+def test_mic_gate_is_off_unless_switched_on(monkeypatch):
+    from medbridge.server import mic_gate_db
+
+    monkeypatch.setenv("MIC_GATE_DB", "-35")
+    monkeypatch.delenv("MIC_GATE", raising=False)
+    assert mic_gate_db() is None
+    monkeypatch.setenv("MIC_GATE", "0")
+    assert mic_gate_db() is None
+    monkeypatch.setenv("MIC_GATE", "1")
+    assert mic_gate_db() == -35.0
+
+
 def test_ws_sends_snapshot_on_connect(app):
     with TestClient(app) as c, c.websocket_connect("/ws?role=doctor") as ws:
         msg = ws.receive_json()

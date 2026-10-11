@@ -66,18 +66,26 @@ class ElevenLabsTranscriber:
             return (json.loads(response.read()).get("text") or "").strip()
 
 
+def dbfs(block):
+    """RMS level of an audio block in dBFS: 0 is full scale; a quiet room on a laptop mic is about -60."""
+    return float(20 * np.log10(np.sqrt(np.mean(np.square(block))) + 1e-10))
+
+
 class SpeechPipeline:
     """VAD -> segmenter -> transcriber. feed() takes 512-sample float32 blocks at 16 kHz and
     calls on_event(kind, utt_id, text) with kind "interim" or "final".
     final_transcriber, if given, writes the final text of each utterance; `transcriber` still writes the
-    interim text, and the final one too whenever final_transcriber raises."""
+    interim text, and the final one too whenever final_transcriber raises.
+    gate_db, if given, is a loudness gate (MIC_GATE): a block quieter than this counts as silence, so talk far from
+    the mic neither starts a caption nor keeps one open. The voice detector alone hears quiet speech as speech."""
 
-    def __init__(self, transcriber, on_event, segmenter=None, final_transcriber=None):
+    def __init__(self, transcriber, on_event, segmenter=None, final_transcriber=None, gate_db=None):
         from silero_vad import load_silero_vad
 
         self.vad = load_silero_vad()
         self.transcriber, self.on_event = transcriber, on_event
         self.final_transcriber = final_transcriber
+        self.gate_db = gate_db
         self.seg = segmenter or UtteranceSegmenter()
         self.utt_id = 0
         self.in_speech = False
@@ -97,7 +105,9 @@ class SpeechPipeline:
             self.fed_epoch = epoch
             self.seg.reset()
             self.vad.reset_states()
-        prob = self.vad(torch.from_numpy(block), 16000).item()
+        prob = self.vad(torch.from_numpy(block), 16000).item()  # always run, so the detector's state stays continuous
+        if self.gate_db is not None and dbfs(block) < self.gate_db:
+            prob = 0.0
         for kind, audio in self.seg.push(block, prob):
             if kind == "interim" and skip_interim:
                 continue

@@ -54,6 +54,11 @@ def _env(name, default):
     return os.environ.get(name, default)
 
 
+def mic_gate_db():
+    """MIC_GATE=1: the loudness gate for the doctor's mic, in dBFS (MIC_GATE_DB). Otherwise None: no gate, as before."""
+    return float(_env("MIC_GATE_DB", "-40")) if _env("MIC_GATE", "0") == "1" else None
+
+
 class SignWorker:
     """Builds the signing motion for the doctor's newest caption in the background and hands it out in batches,
     so signing can start before a long caption is finished. Only the newest caption is built: when another one
@@ -190,7 +195,9 @@ def start_engines(app, hub):
             log.warning("ASR_ENGINE=elevenlabs but ELEVENLABS_API_KEY is empty: using Whisper")
     log.info("speech-to-text: %s", "ElevenLabs Scribe for final captions (Whisper for live text and as fallback)" if cloud
              else "Whisper, on this Mac")
-    pipeline = SpeechPipeline(Transcriber(), hub.on_caption, final_transcriber=cloud)
+    gate = mic_gate_db()
+    log.info("mic loudness gate: %s", f"on, blocks quieter than {gate:g} dBFS count as silence" if gate is not None else "off")
+    pipeline = SpeechPipeline(Transcriber(), hub.on_caption, final_transcriber=cloud, gate_db=gate)
     last = [0.0]
 
     def on_level(rms):
