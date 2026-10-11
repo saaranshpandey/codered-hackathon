@@ -22,7 +22,7 @@ pre-recorded, and the AI output is never faked.
 |---|---|---|
 | Model | [Uni-Sign](https://github.com/ZechengLi19/Uni-Sign) (ICLR 2025), pose-only, fine-tuned on OpenASL | [ASL Citizen](https://github.com/microsoft/ASL-citizen-code) ST-GCN (Microsoft, NeurIPS 2023) |
 | Input | A whole sentence, signed naturally. Rest your hands to finish. | One sign, then lower your hands. |
-| Output | Top-3 closest phrases from an editable ER phrase bank (`data/er_phrases.json`), plus the model's free translation | Top-5 signs from a 103-label ER vocabulary (`data/medical_vocab.json`) |
+| Output | Top-3 closest phrases from an editable ER phrase bank (`data/er_phrases.json`), plus the model's free translation | Top-5 signs from a 105-label ER vocabulary (`data/medical_vocab.json`) |
 | Quality | Right ER phrase ranked 1st 53%, in top 3 66% (held-out Deaf signers). Free translation of ER phrases is usually wrong. | 86% top-1 / 98.5% top-5 on held-out Deaf signers (ER vocabulary) |
 
 It **cannot**:
