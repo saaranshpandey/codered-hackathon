@@ -36,8 +36,8 @@ function caption(state: SignState, mode: string, enabled: boolean) {
   }
 }
 
-export function CameraPanel({ landmarks, signState, mode, enabled, fps, compact, countdown }: {
-  landmarks: RefObject<Landmarks | null>; signState: SignState; mode: string; enabled: boolean; fps: number | null
+export function CameraPanel({ landmarks, signState, mode, enabled, compact, countdown }: {
+  landmarks: RefObject<Landmarks | null>; signState: SignState; mode: string; enabled: boolean
   compact: boolean; countdown: number | null
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -92,7 +92,7 @@ export function CameraPanel({ landmarks, signState, mode, enabled, fps, compact,
 
   const { border, glow } = ring(signState)
   return (
-    <motion.div layout className="relative mx-auto w-full" style={{ maxWidth: compact ? 'calc(22vh * 16 / 9)' : 'calc(34vh * 16 / 9)' }}
+    <motion.div layout className="relative mx-auto w-full" style={{ maxWidth: compact ? 'calc(22vh * 16 / 9)' : 'calc(46vh * 16 / 9)' }}
       transition={{ type: 'spring', stiffness: 260, damping: 32 }}>
       <motion.div
         className="relative aspect-video overflow-hidden rounded-[28px] border-2 bg-ink-raised"
@@ -131,7 +131,6 @@ export function CameraPanel({ landmarks, signState, mode, enabled, fps, compact,
         )}
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-ink/85 to-transparent px-5 pb-4 pt-10">
           <span className="text-[15px] font-bold">{caption(signState, mode, enabled)}</span>
-          {fps !== null && <span className="eyebrow text-bone/50">{fps.toFixed(0)} fps</span>}
         </div>
       </motion.div>
     </motion.div>

@@ -11,7 +11,7 @@ import { Icon, StatusPill, Waveform, Wordmark } from './ui'
 type Send = (msg: Record<string, unknown>) => void
 
 export function PatientView() {
-  const { state, connected, fps, landmarks, level, send } = useMedbridge('patient')
+  const { state, connected, landmarks, level, send } = useMedbridge('patient')
   // Natural signing is disabled for now. To re-enable, restore the commented lines in this component and the
   // ModeSwitch, NaturalControl and NaturalReply components below, then the engine in medbridge/server.py.
   // const [countdown, setCountdown] = useState<number | null>(null)
@@ -27,26 +27,33 @@ export function PatientView() {
         </div>
       </header>
       {state ? (
-        <main className="grid min-h-0 flex-1 grid-cols-1 gap-6 px-5 py-5 lg:grid-cols-12 lg:gap-10 lg:px-10 lg:py-7">
-          <section className="flex flex-col gap-5 lg:col-span-7 lg:min-h-0">
-            <div className="flex h-[42vh] min-h-[260px] lg:h-auto lg:min-h-0 lg:flex-[1.15]">
-              <SigningStage signing={state.signing} onWord={setSigned} />
+        // Wide screens: a 2 x 2 grid. Top row: the mascot, and the camera centred against it. Bottom row: the
+        // captions, and the message box. Narrow screens: one column, in the order written here.
+        <main className="grid min-h-0 flex-1 grid-cols-1 gap-5 px-5 py-5 lg:grid-cols-12 lg:grid-rows-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-x-10 lg:px-10 lg:py-7">
+          <div className="flex h-[42vh] min-h-[260px] lg:col-span-8 lg:col-start-1 lg:row-start-1 lg:h-auto lg:min-h-0">
+            <SigningStage signing={state.signing} onWord={setSigned} />
+          </div>
+          <div className="flex max-h-[34vh] min-h-[180px] flex-col lg:col-span-8 lg:col-start-1 lg:row-start-2 lg:max-h-none lg:min-h-0">
+            <Captions state={state} signed={signed} />
+          </div>
+          <div className="flex flex-col justify-center lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:min-h-0">
+            {/* the camera itself is centred; the switch hangs just below it */}
+            <div className="relative">
+              <CameraPanel landmarks={landmarks} signState={state.sign.state} mode={state.sign.mode}
+                enabled={state.sign.enabled !== false}
+                compact={false /* !!state.natural || state.precise.length > 0: shrank the video to make room for the sign chips */}
+                countdown={null /* countdown */} />
+              {/* <ModeSwitch mode={state.sign.mode} send={send} /> */}
+              {/* {state.sign.mode === 'natural' && <NaturalControl state={state} send={send} countdown={countdown} setCountdown={setCountdown} />} */}
+              {/* {state.sign.mode === 'natural' ? <NaturalReply state={state} send={send} /> : <PreciseReply state={state} send={send} />} */}
+              <div className="mt-4 lg:absolute lg:inset-x-0 lg:top-full">
+                <PreciseReply state={state} send={send} />
+              </div>
             </div>
-            <div className="flex max-h-[34vh] min-h-[180px] flex-col lg:max-h-none lg:min-h-0 lg:flex-1">
-              <Captions state={state} signed={signed} />
-            </div>
-          </section>
-          <section className="flex min-h-0 flex-col gap-5 pb-2 lg:col-span-5 lg:overflow-y-auto">
-            <CameraPanel landmarks={landmarks} signState={state.sign.state} mode={state.sign.mode} fps={fps}
-              enabled={state.sign.enabled !== false}
-              compact={false /* !!state.natural || state.precise.length > 0: shrank the video to make room for the sign chips */}
-              countdown={null /* countdown */} />
-            {/* <ModeSwitch mode={state.sign.mode} send={send} /> */}
-            {/* {state.sign.mode === 'natural' && <NaturalControl state={state} send={send} countdown={countdown} setCountdown={setCountdown} />} */}
-            {/* {state.sign.mode === 'natural' ? <NaturalReply state={state} send={send} /> : <PreciseReply state={state} send={send} />} */}
-            <PreciseReply state={state} send={send} />
+          </div>
+          <div className="flex flex-col justify-end lg:col-span-4 lg:col-start-9 lg:row-start-2 lg:min-h-0">
             <Composer state={state} send={send} />
-          </section>
+          </div>
         </main>
       ) : (
         <div className="grid flex-1 place-items-center font-serif text-3xl italic text-bone/50">Connecting…</div>
@@ -326,27 +333,27 @@ function Composer({ state, send }: { state: State; send: Send }) {
   const saveEdit = () => { send({ type: 'draft.edit', text }); setEditing(false) }
 
   return (
-    <div className="sticky bottom-0 z-10 mt-auto rounded-3xl border border-ink-line bg-ink-raised p-5 shadow-[0_-24px_40px_-12px_var(--color-ink)]">
+    <div className="mt-auto rounded-2xl border border-ink-line bg-ink-raised p-4">
       {editing ? (
         <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} rows={2}
-          className="w-full resize-none rounded-xl bg-ink px-3 py-2 text-[24px] leading-snug outline-none ring-1 ring-bone/20 focus:ring-mint" />
+          className="w-full resize-none rounded-lg bg-ink px-3 py-2 text-[20px] leading-snug outline-none ring-1 ring-bone/20 focus:ring-mint" />
       ) : (
-        <p className={`leading-snug ${draft.source === 'natural' && !draft.edited ? 'line-clamp-2 text-[17px] text-bone/75' : 'min-h-[34px] text-[24px]'} ${draft.text ? '' : 'text-bone/30'}`}>
+        <p className={`max-h-[4.2em] min-h-[1.4em] overflow-y-auto text-[20px] font-bold leading-[1.4] ${draft.text ? '' : 'font-normal text-bone/30'}`}>
           {draft.text || 'Nothing yet'}
         </p>
       )}
-      <div className="mt-4 flex items-center gap-2.5">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {editing ? (
-          <button onClick={saveEdit} className="flex items-center gap-2 rounded-md border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="check" /> Save</button>
+          <button onClick={saveEdit} className="flex items-center gap-1.5 rounded-md border border-bone/25 px-3 py-2 text-sm font-bold hover:bg-bone/10"><Icon name="check" size={15} /> Save</button>
         ) : (
-          <button onClick={startEdit} className="flex items-center gap-2 rounded-md border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="edit" /> Edit</button>
+          <button onClick={startEdit} className="flex items-center gap-1.5 rounded-md border border-bone/25 px-3 py-2 text-sm font-bold hover:bg-bone/10"><Icon name="edit" size={15} /> Edit</button>
         )}
         <button onClick={() => { send({ type: 'draft.clear' }); setEditing(false) }}
-          className="flex items-center gap-2 rounded-md border border-bone/25 px-4 py-2.5 font-bold hover:bg-bone/10"><Icon name="retry" /> Retry</button>
+          className="flex items-center gap-1.5 rounded-md border border-bone/25 px-3 py-2 text-sm font-bold hover:bg-bone/10"><Icon name="retry" size={15} /> Retry</button>
         <motion.button whileTap={{ scale: 0.96 }} disabled={!draft.text.trim() || editing}
           onClick={() => send({ type: 'draft.confirm' })}
-          className="ml-auto flex items-center gap-2 rounded-md bg-mint-deep px-6 py-3 text-[17px] font-bold text-on-go transition-opacity disabled:opacity-25">
-          <Icon name="check" /> Confirm &amp; send
+          className="ml-auto flex items-center gap-1.5 rounded-md bg-mint-deep px-4 py-2 text-[15px] font-bold text-on-go transition-opacity disabled:opacity-25">
+          <Icon name="check" size={16} /> Confirm &amp; send
         </motion.button>
       </div>
       <AnimatePresence>
