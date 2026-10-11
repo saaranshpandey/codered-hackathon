@@ -280,3 +280,21 @@ def test_signing_status_is_published_in_state(hub):
                     "words": [{"word": "pain", "gloss": "PAIN", "source": "aslc", "start": 0, "end": 40}]})
     assert hub.state["signing"]["caption_id"] == 3 and hub.state["signing"]["status"] == "ready"
     assert hub.sent[-1]["state"]["signing"]["words"][0]["gloss"] == "PAIN"
+
+
+def test_pausing_captions_drops_the_live_text_and_ignores_late_captions(hub):
+    paused = []
+    hub.on_asr_pause = paused.append
+    hub.on_caption("interim", 0, "Are you exper")
+
+    hub.apply({"type": "asr.pause"}, role="doctor")
+    assert paused == [True]
+    assert hub.state["interim"] is None
+    hub.on_caption("interim", 0, "Are you experiencing")  # heard before the pause, transcribed after it
+    hub.on_caption("final", 0, "Are you experiencing chest pain?")
+    assert hub.state["interim"] is None and hub.state["captions"] == []
+
+    hub.apply({"type": "asr.resume"}, role="doctor")
+    assert paused == [True, False]
+    hub.on_caption("final", 1, "Where does it hurt?")
+    assert [c["text"] for c in hub.state["captions"]] == ["Where does it hurt?"]

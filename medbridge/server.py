@@ -201,7 +201,7 @@ def start_engines(app, hub):
             hub.on_asr_state("speech" if pipeline.in_speech else "listening")
 
     mic = MicAsr(pipeline, device=device, on_level=on_level)
-    hub.on_asr_pause = lambda paused: setattr(mic, "paused", paused)
+    hub.on_asr_pause = mic.set_paused
     app.state.mute_mic = mic.mute_for
     mic.start()
     hub.on_asr_state("listening")

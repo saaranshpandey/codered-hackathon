@@ -81,10 +81,22 @@ class SpeechPipeline:
         self.seg = segmenter or UtteranceSegmenter()
         self.utt_id = 0
         self.in_speech = False
+        self.epoch = self.fed_epoch = 0
+
+    def reset(self):
+        """Forget everything heard so far: the utterance in progress is dropped, and so is one being transcribed.
+        May be called from another thread; the audio is dropped at the next feed()."""
+        self.epoch += 1
+        self.in_speech = False
 
     def feed(self, block, skip_interim=False):
         import torch
 
+        epoch = self.epoch
+        if epoch != self.fed_epoch:  # reset() since the last block: start again from silence
+            self.fed_epoch = epoch
+            self.seg.reset()
+            self.vad.reset_states()
         prob = self.vad(torch.from_numpy(block), 16000).item()
         for kind, audio in self.seg.push(block, prob):
             if kind == "interim" and skip_interim:
@@ -98,6 +110,8 @@ class SpeechPipeline:
                     log.warning("cloud speech-to-text failed, using the local model for this one: %s", e)
             if text is None:
                 text = self.transcriber(audio)
+            if self.epoch != epoch:  # reset() while this was being transcribed: it is audio from before
+                return
             if text:
                 self.on_event(kind, self.utt_id, text)
             if kind == "final":
@@ -147,9 +161,13 @@ class UtteranceSegmenter:
 
     def _end(self, keep):
         audio = np.concatenate(self.buf)
+        self.reset()
+        return [("final", audio)] if keep else []
+
+    def reset(self):
+        """Drop the utterance in progress and the audio kept from just before it."""
         self.buf = None
         self.preroll.clear()
-        return [("final", audio)] if keep else []
 
 
 class MicAsr:
@@ -165,6 +183,18 @@ class MicAsr:
         self.paused = False
         self.muted_until = 0.0
         self.running = False
+
+    def set_paused(self, paused):
+        """Pausing stops listening at once and throws away what was being said; resuming starts from silence."""
+        import queue
+
+        self.paused = paused
+        while True:
+            try:
+                self.queue.get_nowait()
+            except queue.Empty:
+                break
+        self.pipeline.reset()
 
     def mute_for(self, seconds):
         """Ignore the microphone for a while: the app is about to play sound that must not be captioned."""

@@ -105,6 +105,8 @@ class Hub:
     # ---- engine events -------------------------------------------------------------------
     def on_caption(self, kind, utt_id, text):
         with self.lock:
+            if self.state["asr"]["state"] == "paused":  # heard before the doctor paused, transcribed after
+                return
             if kind == "interim":
                 self.state["interim"] = {"id": utt_id, "text": text}
                 if self.on_interim_caption:
@@ -227,6 +229,7 @@ class Hub:
             elif kind in ("asr.pause", "asr.resume"):
                 paused = kind == "asr.pause"
                 s["asr"]["state"] = "paused" if paused else "listening"
+                s["interim"] = None  # the half-heard sentence is dropped, not finished after resuming
                 if self.on_asr_pause:
                     self.on_asr_pause(paused)
             elif kind == "session.end":
