@@ -12,7 +12,7 @@ from medbridge.translate import literal
 
 PATIENT_ACTIONS = {"mode.set", "candidate.pick", "sign.pick", "sign.remove", "draft.edit",
                    "draft.confirm", "draft.clear", "sign.start", "sign.done", "sign.enable"}
-DOCTOR_ACTIONS = {"caption.correct", "asr.pause", "asr.resume", "session.end"}
+DOCTOR_ACTIONS = {"caption.correct", "caption.add", "asr.pause", "asr.resume", "session.end"}
 
 
 def _fresh(mode="natural", asr_state="listening", sign_enabled=True):
@@ -64,6 +64,12 @@ class Hub:
     def stream(self, msg):
         self.broadcast(msg)
 
+    def _add_caption(self, text):
+        cid = self._id()
+        self.state["captions"].append({"id": cid, "text": text, "original": None, "t": time.time()})
+        if self.on_final_caption:
+            self.on_final_caption(cid, text)
+
     def _clear_draft(self):
         self.state["natural"] = None
         self.state["precise"] = []
@@ -100,10 +106,7 @@ class Hub:
                 self.state["interim"] = {"id": utt_id, "text": text}
             else:
                 self.state["interim"] = None
-                cid = self._id()
-                self.state["captions"].append({"id": cid, "text": text, "original": None, "t": time.time()})
-                if self.on_final_caption:
-                    self.on_final_caption(cid, text)
+                self._add_caption(text)
             self._publish()
 
     def on_signing(self, info):
@@ -211,6 +214,11 @@ class Hub:
                         c["text"] = str(msg["text"]).strip()[:500]
                         if self.on_final_caption:
                             self.on_final_caption(c["id"], c["text"])
+            elif kind == "caption.add":  # typed by the doctor: shown and signed like a spoken caption
+                text = str(msg.get("text", "")).strip()[:500]
+                if not text:
+                    return
+                self._add_caption(text)
             elif kind in ("asr.pause", "asr.resume"):
                 paused = kind == "asr.pause"
                 s["asr"]["state"] = "paused" if paused else "listening"

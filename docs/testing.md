@@ -73,6 +73,7 @@ Check:
 - **Correction:** on the doctor view, click a caption and change one word (e.g. a drug name), then press Enter.
   The patient view shows **Corrected by doctor** with the changed word highlighted.
 - **Pause:** press **Pause captions**, speak, and confirm that nothing appears. Then press **Resume captions**.
+- **Typing:** type in the box under the conversation and press Enter. The line reaches the patient like a spoken one.
 
 Record the number of lines with a wrong word, and any drug or medical term that was misheard.
 

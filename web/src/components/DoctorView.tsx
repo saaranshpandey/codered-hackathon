@@ -56,6 +56,12 @@ function AsrPill({ asr }: { asr: State['asr']['state'] }) {
 function Timeline({ state, send }: { state: State; send: Send }) {
   const scroller = useRef<HTMLDivElement>(null)
   const entries = timeline(state.captions, state.messages)
+  const [typed, setTyped] = useState('')
+  const sendTyped = () => {
+    if (!typed.trim()) return
+    send({ type: 'caption.add', text: typed })
+    setTyped('')
+  }
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
   }, [entries.length, state.interim?.text])
@@ -82,6 +88,16 @@ function Timeline({ state, send }: { state: State; send: Send }) {
           </div>
         )}
       </div>
+      {/* Typed lines reach the patient like spoken captions. */}
+      <form onSubmit={(e) => { e.preventDefault(); sendTyped() }} className="flex items-center gap-2.5 border-t border-paper-line px-5 py-4">
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} maxLength={500} placeholder="Type a message"
+          aria-label="Type a message to the patient"
+          className="min-w-0 flex-1 rounded-full border border-graphite/15 bg-paper px-5 py-3 text-[17px] outline-none focus:border-signal/60" />
+        <button type="submit" disabled={!typed.trim()} aria-label="Send"
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-graphite text-paper transition-opacity disabled:opacity-25">
+          <Icon name="send" />
+        </button>
+      </form>
     </div>
   )
 }

@@ -255,6 +255,18 @@ def test_final_and_corrected_captions_are_sent_for_signing():
     assert sent == [(cid, "Are you in pain?"), (cid, "Are you in pain now?")]
 
 
+def test_typed_caption_from_the_doctor_is_stored_and_sent_for_signing():
+    from medbridge.hub import Hub
+
+    signed = []
+    h = Hub(broadcast=lambda m: None, translate=literal, on_final_caption=lambda cid, text: signed.append(text))
+    h.apply({"type": "caption.add", "text": "  Please lie down.  "}, role="doctor")
+    h.apply({"type": "caption.add", "text": "   "}, role="doctor")
+    h.apply({"type": "caption.add", "text": "Not from the patient."}, role="patient")
+    assert [c["text"] for c in h.state["captions"]] == ["Please lie down."]
+    assert h.state["captions"][0]["original"] is None and signed == ["Please lie down."]
+
+
 def test_signing_status_is_published_in_state(hub):
     hub.on_signing({"caption_id": 3, "status": "ready", "frames": 90, "fps": 30,
                     "words": [{"word": "pain", "gloss": "PAIN", "source": "aslc", "start": 0, "end": 40}]})
