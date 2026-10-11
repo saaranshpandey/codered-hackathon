@@ -69,7 +69,8 @@ Check:
 
 Record the number of lines with a wrong word, and any drug or medical term that was misheard.
 
-**Signing figure.** After each final caption, the figure above the captions signs the doctor's words.
+**Signing cougar.** After each final caption, the cougar mascot above the captions signs the doctor's words. Its paws,
+arms, head, mouth and eyebrows follow the Deaf signers' recorded motion.
 - The first time a new word is used it takes a few seconds ("Preparing signs…"). After that it is cached.
 - Each word chip shows where its motion came from: green = Deaf signer (ASL Citizen), amber = sign.mt, hollow = no sign
   (text only).

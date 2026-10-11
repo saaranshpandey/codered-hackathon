@@ -1,21 +1,19 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+// Glow (bloom) is disabled for now. To re-enable, restore these imports and the composer block below.
+// import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+// import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+// import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+// import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { createCougar } from '../lib/cougar'
 import type { Signing } from '../lib/types'
 import { Icon } from './ui'
 
 // Motion layout from the backend (medbridge/text2sign.py): 178 points x (x, y, z), image axes, shoulder width = 1.
 const P = 178
-const LS = 0, RS = 1, LE = 2, RE = 3, LW = 4, RW = 5, LHIP = 6, RHIP = 7, FACE = 8, LH = 136, RH = 157
-const HAND = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
-  [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]]
 const DEPTH = 0.22 // MediaPipe depth is noisy and exaggerated; compress it for display
-
-type Bone = { a: number; b: number; mesh: THREE.Mesh }
+const SMOOTH = 0.55 // per-frame smoothing of landmark jitter (1 = none)
 type Motion = { fps: number; frames: number; data: Float32Array; words: NonNullable<Signing['words']> }
 
 function decode(b64: string) {
@@ -60,59 +58,54 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
     const el = mount.current!
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.outputColorSpace = THREE.SRGBColorSpace
     el.appendChild(renderer.domElement)
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#121310') // opaque: bloom on a transparent canvas turns grey
-    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50)
-    const composer = new EffectComposer(renderer)
-    composer.addPass(new RenderPass(scene, camera))
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.45, 0.2)
-    composer.addPass(bloom)
-    composer.addPass(new OutputPass())
+    scene.background = new THREE.Color('#17140f')
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50)
+    // Glow (bloom) disabled for now:
+    // const composer = new EffectComposer(renderer)
+    // composer.addPass(new RenderPass(scene, camera))
+    // const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.45, 0.2)
+    // composer.addPass(bloom)
+    // composer.addPass(new OutputPass())
 
-    const cyl = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true)
-    const mat = (color: string, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity })
-    const bones: Bone[] = []
-    const addBone = (a: number, b: number, m: THREE.Material, r: number) => {
-      const mesh = new THREE.Mesh(cyl, m)
-      mesh.userData.r = r
-      scene.add(mesh)
-      bones.push({ a, b, mesh })
-    }
-    const body = mat('#a8a39a', 0.5)
-    for (const [a, b] of [[LS, RS], [LS, LE], [LE, LW], [RS, RE], [RE, RW], [LS, LHIP], [RS, RHIP], [LHIP, RHIP]]) addBone(a, b, body, 0.035)
-    const left = mat('#5cf0b0'), right = mat('#ff8a4c')
-    for (const [a, b] of HAND) { addBone(LH + a, LH + b, left, 0.024); addBone(RH + a, RH + b, right, 0.024) }
-    addBone(LW, LH, left, 0.028); addBone(RW, RH, right, 0.028)
+    scene.add(new THREE.HemisphereLight('#fff3e2', '#3a2a1e', 1.6))
+    const key = new THREE.DirectionalLight('#ffffff', 2.2)
+    key.position.set(2.5, 3, 4)
+    const rim = new THREE.DirectionalLight('#ffb27a', 1.4)
+    rim.position.set(-3, 2, -3)
+    scene.add(key, rim)
+    // soft contact shadow under the mascot
+    const shadowCanvas = document.createElement('canvas')
+    shadowCanvas.width = shadowCanvas.height = 128
+    const sctx = shadowCanvas.getContext('2d')!
+    const grad = sctx.createRadialGradient(64, 64, 0, 64, 64, 64)
+    grad.addColorStop(0, 'rgba(0,0,0,0.55)'); grad.addColorStop(1, 'rgba(0,0,0,0)')
+    sctx.fillStyle = grad; sctx.fillRect(0, 0, 128, 128)
+    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.3), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shadowCanvas), transparent: true, depthWrite: false }))
+    shadow.rotation.x = -Math.PI / 2
+    shadow.position.set(0, -1.75, 0)
+    scene.add(shadow)
 
-    const joint = new THREE.SphereGeometry(1, 12, 12)
-    const joints = new THREE.InstancedMesh(joint, mat('#ffffff'), 50)
-    scene.add(joints)
-    const jointIdx = [LS, RS, LE, RE, LW, RW, LHIP, RHIP, ...Array.from({ length: 21 }, (_, i) => LH + i), ...Array.from({ length: 21 }, (_, i) => RH + i)]
-
-    const face = new THREE.BufferGeometry()
-    const facePos = new Float32Array(128 * 3)
-    face.setAttribute('position', new THREE.BufferAttribute(facePos, 3))
-    scene.add(new THREE.Points(face, new THREE.PointsMaterial({ color: '#f2eee6', size: 0.018, transparent: true, opacity: 0.55 })))
-    const head = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), new THREE.MeshBasicMaterial({ color: '#f2eee6', transparent: true, opacity: 0.035 }))
-    scene.add(head)
-    const halo = new THREE.Mesh(new THREE.TorusGeometry(1, 0.012, 8, 96), mat('#ff5a1f', 0.5))
-    halo.rotation.x = Math.PI / 2
-    scene.add(halo)
-
+    const cougar = createCougar(scene)
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const v = new THREE.Vector3(), w = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4()
-    const pt = (f: Float32Array, base: number, i: number, out: THREE.Vector3) => {
+    const smooth = new Float32Array(P * 3).fill(NaN)
+    const getter = (f: Float32Array, base: number) => (i: number, out: THREE.Vector3) => {
       const k = base + i * 3
       const x = f[k], y = f[k + 1], z = f[k + 2]
-      if (Number.isNaN(x) || Number.isNaN(y)) return false
-      out.set(x, -y, Math.max(-1, Math.min(1, -(Number.isNaN(z) ? 0 : z) * DEPTH)))
+      if (Number.isNaN(x) || Number.isNaN(y)) { smooth[i * 3] = NaN; return false }
+      const tz = Math.max(-1, Math.min(1, -(Number.isNaN(z) ? 0 : z) * DEPTH))
+      const j = i * 3
+      if (Number.isNaN(smooth[j])) { smooth[j] = x; smooth[j + 1] = -y; smooth[j + 2] = tz }
+      else { smooth[j] += (x - smooth[j]) * SMOOTH; smooth[j + 1] += (-y - smooth[j + 1]) * SMOOTH; smooth[j + 2] += (tz - smooth[j + 2]) * SMOOTH }
+      out.set(smooth[j], smooth[j + 1], smooth[j + 2])
       return true
     }
 
     const resize = () => {
       const { clientWidth: W, clientHeight: H } = el
-      renderer.setSize(W, H); composer.setSize(W, H); bloom.setSize(W, H)
+      renderer.setSize(W, H)
       camera.aspect = W / H; camera.updateProjectionMatrix()
     }
     const ro = new ResizeObserver(resize)
@@ -121,7 +114,7 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
 
     // ?frame=N freezes the animation on one frame (for checking the rendering).
     const pinned = Number(new URLSearchParams(location.search).get('frame') ?? NaN)
-    let raf = 0, last = performance.now(), wall = 0, shownWord = -1
+    let raf = 0, last = performance.now(), wall = 0, shownWord = -1, lastFrame = -1
     const tick = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now; wall += dt
@@ -136,46 +129,18 @@ export function SigningStage({ signing }: { signing: Signing | null }) {
         fi = Number.isFinite(pinned) ? Math.min(m.frames - 1, pinned) : Math.min(m.frames - 1, Math.floor(c.t * m.fps))
       }
       const vis = fi >= 0
-      if (vis) {
-        const base = fi * P * 3
-        const f = m!.data
-        for (const bone of bones) {
-          const ok = pt(f, base, bone.a, v) && pt(f, base, bone.b, w)
-          bone.mesh.visible = ok
-          if (!ok) continue
-          const len = v.distanceTo(w)
-          bone.mesh.position.copy(v).add(w).multiplyScalar(0.5)
-          bone.mesh.quaternion.setFromUnitVectors(up, w.clone().sub(v).normalize())
-          bone.mesh.scale.set(bone.mesh.userData.r, len, bone.mesh.userData.r)
-        }
-        let n = 0
-        for (const i of jointIdx) {
-          if (!pt(f, base, i, v)) continue
-          const r = i >= LH ? ((i - LH) % 21 % 4 === 0 && (i - LH) % 21 > 0 ? 0.038 : 0.026) : 0.04
-          joints.setMatrixAt(n++, m4.compose(v, new THREE.Quaternion(), new THREE.Vector3(r, r, r)))
-        }
-        joints.count = n
-        joints.instanceMatrix.needsUpdate = true
-        let fx = 0, fy = 0, fz = 0, fn = 0
-        for (let i = 0; i < 128; i++) {
-          if (pt(f, base, FACE + i, v)) { facePos.set([v.x, v.y, v.z], i * 3); fx += v.x; fy += v.y; fz += v.z; fn++ }
-          else facePos.set([0, -99, 0], i * 3)
-        }
-        face.attributes.position.needsUpdate = true
-        if (fn) head.position.set(fx / fn, fy / fn, fz / fn - 0.05)
-        else if (pt(f, base, LS, v) && pt(f, base, RS, w)) head.position.copy(v).add(w).multiplyScalar(0.5).add(new THREE.Vector3(0, 0.95, 0))
-        head.scale.set(0.34, 0.46, 0.34)
-        halo.position.set(0, -1.35, 0)
-        halo.scale.setScalar(1.15 + Math.sin(wall * 1.6) * 0.04)
+      cougar.setVisible(vis)
+      shadow.visible = vis
+      if (vis && fi !== lastFrame) {
+        lastFrame = fi
+        cougar.update(getter(m!.data, fi * P * 3))
         const wi = m!.words.findIndex((x) => fi >= x.start && fi < x.end)
         if (wi !== shownWord) { shownWord = wi; setWord(wi) }
       }
-      for (const b of bones) b.mesh.visible = b.mesh.visible && vis
-      joints.visible = vis; head.visible = vis; halo.visible = vis
-      const yaw = reduce ? 0 : Math.sin(wall * 0.18) * 0.35
-      camera.position.set(Math.sin(yaw) * 3.9, 0.25, Math.cos(yaw) * 3.9)
-      camera.lookAt(0, 0.05, 0)
-      composer.render()
+      const yaw = reduce ? 0 : Math.sin(wall * 0.18) * 0.3
+      camera.position.set(Math.sin(yaw) * 4.6, 0.35, Math.cos(yaw) * 4.6)
+      camera.lookAt(0, 0.1, 0)
+      renderer.render(scene, camera) // composer.render() when glow is re-enabled
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)

@@ -4,8 +4,8 @@ Two-way, real-time communication between a Deaf patient who signs American Sign 
 speaking clinician in an emergency room. Everything runs live on one MacBook. Nothing is
 pre-recorded, and the AI output is never faked.
 
-- **Doctor → patient:** the doctor speaks. The patient reads live captions and watches a 3D figure sign the words, word by word,
-  using Deaf signers' recorded motion. The doctor can correct any caption.
+- **Doctor → patient:** the doctor speaks. The patient reads live captions and watches a 3D cartoon cougar mascot sign the
+  words, word by word, posed directly from Deaf signers' recorded motion. The doctor can correct any caption.
 - **Patient → doctor:** the patient signs. The app translates the signing into English candidates, and the patient
   confirms, corrects or rejects them before anything is shown to the doctor as "patient said".
 
