@@ -188,9 +188,14 @@ export function SigningStage({ signing, onWord }: { signing: Signing | null; onW
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-ink-line bg-[radial-gradient(ellipse_at_50%_30%,color-mix(in_srgb,var(--color-stage)_78%,white)_0%,var(--color-stage)_80%)]">
       {loaded && !noSigns && (
         <div className="absolute right-6 top-5 z-20 flex items-center gap-2">
-          <button onClick={() => setSpeed((s) => (s === 1 ? 0.6 : 1))} className="eyebrow rounded-md border border-bone/20 px-3 py-1.5 text-bone/70 hover:bg-bone/10">
-            {speed === 1 ? '1×' : '0.6×'}
-          </button>
+          <div className="flex overflow-hidden rounded-md border border-bone/20" role="group" aria-label="Signing speed">
+            {[0.6, 1, 1.5, 2].map((s) => (
+              <button key={s} onClick={() => setSpeed(s)} aria-pressed={speed === s}
+                className={`eyebrow px-2.5 py-1.5 ${speed === s ? 'bg-bone text-ink' : 'text-bone/70 hover:bg-bone/10'}`}>
+                {s}×
+              </button>
+            ))}
+          </div>
           <button onClick={replay} className="flex items-center gap-1.5 rounded-md border border-bone/20 px-3 py-1.5 text-[13px] font-bold hover:bg-bone/10">
             <Icon name="retry" size={14} /> Replay
           </button>

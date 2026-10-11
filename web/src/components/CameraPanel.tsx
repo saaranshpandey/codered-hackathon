@@ -28,11 +28,11 @@ function caption(state: SignState, mode: string, enabled: boolean) {
   }
   if (!enabled) return 'Sign recognition is off'
   switch (state) {
-    case 'hands': return 'Hands detected'
-    case 'signing': return mode === 'natural' ? 'Recording — tap Done when you finish' : 'Signing — lower your hands after the sign'
+    case 'hands': return ''
+    case 'signing': return mode === 'natural' ? 'Recording — tap Done when you finish' : ''
     case 'translating': return 'Translating your sentence…'
-    case 'recognizing': return 'Recognizing sign…'
-    default: return mode === 'natural' ? 'Ready — tap Start signing' : 'Ready — one sign at a time'
+    case 'recognizing': return ''
+    default: return mode === 'natural' ? 'Ready — tap Start signing' : ''
   }
 }
 
@@ -129,9 +129,11 @@ export function CameraPanel({ landmarks, signState, mode, enabled, compact, coun
           <motion.div className="pointer-events-none absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-amber/20 to-transparent"
             initial={{ x: '-100%' }} animate={{ x: '300%' }} transition={{ duration: 1.3, repeat: Infinity, ease: 'easeInOut' }} />
         )}
-        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-ink/85 to-transparent px-5 pb-4 pt-10">
-          <span className="text-[15px] font-bold">{caption(signState, mode, enabled)}</span>
-        </div>
+        {caption(signState, mode, enabled) && (
+          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-ink/85 to-transparent px-5 pb-4 pt-10">
+            <span className="text-[15px] font-bold">{caption(signState, mode, enabled)}</span>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   )
