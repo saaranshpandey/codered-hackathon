@@ -1,14 +1,18 @@
 import { useEffect, useRef, type RefObject } from 'react'
+import { signwaveHandPath, signwaveWavePath } from '../lib/signwave'
 
 export function Wordmark({ role, tone }: { role: string; tone: 'dark' | 'light' }) {
   return (
-    <div className="flex items-baseline gap-3 select-none">
-      <svg width="30" height="22" viewBox="0 0 30 22" aria-hidden className="translate-y-[3px]">
-        <path d="M2 17C5 6 25 6 28 17" fill="none" className="stroke-mint" strokeWidth="2.6" strokeLinecap="round" />
-        <path d="M2 17v4M28 17v4M15 10v11M8.5 12.5v8.5M21.5 12.5v8.5" className={tone === 'dark' ? 'stroke-bone' : 'stroke-graphite'} strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-      <span className="font-serif text-[28px] leading-none tracking-tight">
-        Med<span className="italic">bridge</span>
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 select-none ${tone === 'dark' ? 'text-bone' : 'text-graphite'}`}>
+      <span className="inline-flex shrink-0 items-center gap-2.5">
+        <svg width="72" height="45" viewBox="25 110 450 280" fill="none" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <g stroke="currentColor" strokeWidth="5.8">
+            <path d={signwaveHandPath} transform="translate(30 105) scale(1.1)" />
+            <path d={signwaveHandPath} transform="translate(470 395) rotate(180) scale(1.1)" />
+          </g>
+          <path d={signwaveWavePath} className="stroke-mint" strokeWidth="7" />
+        </svg>
+        <span className="font-sans text-[28px] font-bold leading-none tracking-[-0.01724em] [font-kerning:none]">SignWave</span>
       </span>
       <span className="eyebrow opacity-50">{role}</span>
     </div>

@@ -1,5 +1,5 @@
 /*
- * MEDBRIDGE colours. This is the only file to edit to re-colour the app.
+ * SignWave colours. This is the only file to edit to re-colour the app.
  *
  * Each block below is one complete theme: a short list of named colours. Components never use these directly;
  * they use the roles at the bottom of the file, so changing a colour here changes it everywhere (Tailwind classes,

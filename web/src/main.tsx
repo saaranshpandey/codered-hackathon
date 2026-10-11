@@ -18,7 +18,7 @@ try {
 } catch { /* storage blocked: the default theme is used */ }
 
 const isDoctor = location.pathname.startsWith('/doctor')
-document.title = isDoctor ? 'Medbridge · Clinician' : 'Medbridge · Patient'
+document.title = isDoctor ? 'SignWave · Clinician' : 'SignWave · Patient'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>{isDoctor ? <DoctorView /> : <PatientView />}</StrictMode>,
