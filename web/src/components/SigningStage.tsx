@@ -176,9 +176,9 @@ export function SigningStage({ signing, onWord }: { signing: Signing | null; onW
               className="shimmer absolute inset-x-0 bottom-4 text-center text-[15px] font-bold">Preparing signs…</motion.p>
           )}
         </AnimatePresence>
-        {(!loaded || noSigns) && !building && (
+        {!loaded && !building && (
           <p className="absolute inset-0 z-20 grid place-items-center px-10 text-center font-serif text-2xl italic text-bone/30">
-            {noSigns ? 'No signs for these words. Please read the caption below.' : 'When the doctor speaks, their words are signed here.'}
+            When the doctor speaks, their words are signed here.
           </p>
         )}
       </div>
