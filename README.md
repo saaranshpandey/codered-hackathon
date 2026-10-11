@@ -63,6 +63,10 @@ All numbers come from running **our** live pipeline code on held-out data (`scri
 Notes:
 - A larger pose model (rtmlib `performance`) scored lower (BLEU-4 11.4) and runs at about 6 fps, so `lightweight` is used.
 - The ASR numbers use synthesized speech. Run `python scripts/eval_asr.py --live` with a real speaker to measure the real case.
+- Optional cloud speech-to-text (`ASR_ENGINE=elevenlabs`, ElevenLabs Scribe v2 for the final captions): on the same 80
+  clips on an M2 Pro, WER **0.9%**, medical-term recall 100%, p50 514 ms / p95 769 ms, against Whisper's 5.6%, 94% and
+  616 / 659 ms on that machine. Nearly all of the gap is one voice (macOS "Aman": Whisper 18.8%, Scribe 0%); on the
+  other three both are near 1%. Reproduce with `python scripts/eval_asr.py --engine elevenlabs`.
 - The live signing accuracy depends on the signer. Measure it with the protocol in [Testing](#testing-and-measurement).
 
 ## Architecture
@@ -174,7 +178,8 @@ METRICS_LOG=1 python -m medbridge.server # logs timings/scores/labels (no text/a
 ## Privacy and safety
 
 - Audio and video are processed in memory and never written to disk. No recordings are made.
-- Speech recognition runs locally.
+- Speech recognition runs locally, unless `ASR_ENGINE=elevenlabs` is set: then the audio of each thing the doctor
+  says is sent to ElevenLabs for the final caption.
 - Network calls:
   - optional Claude rephrasing of precise-mode sign labels;
   - for the doctor-to-patient signing, any **word that is missing from the local sign dictionary** is sent to the

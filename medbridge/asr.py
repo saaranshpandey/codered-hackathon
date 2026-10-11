@@ -1,11 +1,21 @@
 """Doctor speech -> live captions: Silero VAD segments utterances, mlx-whisper transcribes them.
-Audio stays in memory and is dropped after transcription."""
+Audio stays in memory and is dropped after transcription.
+
+With ASR_ENGINE=elevenlabs, the final text of each utterance comes from ElevenLabs Scribe instead (the
+utterance's audio is sent to ElevenLabs); Whisper still gives the live text while the doctor is speaking,
+and takes over for any utterance the cloud call fails on."""
 import collections
+import json
+import logging
 import time
+import urllib.request
+import uuid
 
 import numpy as np
 
 from medbridge import metrics
+
+log = logging.getLogger(__name__)
 
 WHISPER_REPO = "mlx-community/whisper-large-v3-turbo"
 # Biases spelling toward ER vocabulary; it is a decoding hint, not inserted text.
@@ -30,15 +40,44 @@ class Transcriber:
         return out["text"].strip()
 
 
+# Words Scribe is told to listen for (its counterpart of ER_PROMPT). ElevenLabs bills 20% more when any are sent.
+ER_TERMS = ["chest pain", "shortness of breath", "nausea", "dizziness", "allergies", "penicillin", "ibuprofen",
+            "acetaminophen", "aspirin", "nitroglycerin", "blood pressure", "blood thinners", "CT scan", "IV"]
+
+
+class ElevenLabsTranscriber:
+    """Cloud speech-to-text: 16 kHz float audio -> text through ElevenLabs Scribe. Raises if the call fails."""
+    URL = "https://api.elevenlabs.io/v1/speech-to-text"
+
+    def __init__(self, api_key, model="scribe_v2", keyterms=ER_TERMS, timeout=8):
+        self.api_key, self.model, self.keyterms, self.timeout = api_key, model, list(keyterms), timeout
+
+    def __call__(self, audio):
+        pcm = (np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes()  # raw 16-bit mono: no encoding step either side
+        fields = [("model_id", self.model), ("file_format", "pcm_s16le_16"), ("language_code", "en"),
+                  ("tag_audio_events", "false")] + [("keyterms", t) for t in self.keyterms]
+        boundary = uuid.uuid4().hex
+        body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields)
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.pcm"\r\n'
+                 f'Content-Type: application/octet-stream\r\n\r\n').encode() + pcm + f"\r\n--{boundary}--\r\n".encode()
+        request = urllib.request.Request(self.URL, data=body, headers={
+            "xi-api-key": self.api_key, "Content-Type": f"multipart/form-data; boundary={boundary}"})
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            return (json.loads(response.read()).get("text") or "").strip()
+
+
 class SpeechPipeline:
     """VAD -> segmenter -> transcriber. feed() takes 512-sample float32 blocks at 16 kHz and
-    calls on_event(kind, utt_id, text) with kind "interim" or "final"."""
+    calls on_event(kind, utt_id, text) with kind "interim" or "final".
+    final_transcriber, if given, writes the final text of each utterance; `transcriber` still writes the
+    interim text, and the final one too whenever final_transcriber raises."""
 
-    def __init__(self, transcriber, on_event, segmenter=None):
+    def __init__(self, transcriber, on_event, segmenter=None, final_transcriber=None):
         from silero_vad import load_silero_vad
 
         self.vad = load_silero_vad()
         self.transcriber, self.on_event = transcriber, on_event
+        self.final_transcriber = final_transcriber
         self.seg = segmenter or UtteranceSegmenter()
         self.utt_id = 0
         self.in_speech = False
@@ -51,7 +90,14 @@ class SpeechPipeline:
             if kind == "interim" and skip_interim:
                 continue
             t0 = time.perf_counter()
-            text = self.transcriber(audio)
+            text = None
+            if kind == "final" and self.final_transcriber is not None:
+                try:
+                    text = self.final_transcriber(audio)
+                except Exception as e:
+                    log.warning("cloud speech-to-text failed, using the local model for this one: %s", e)
+            if text is None:
+                text = self.transcriber(audio)
             if text:
                 self.on_event(kind, self.utt_id, text)
             if kind == "final":

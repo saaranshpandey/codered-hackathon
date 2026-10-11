@@ -3,12 +3,15 @@
   --tts   (default) synthesized speech in several macOS voices, streamed through the real
           pipeline (Silero VAD -> segmenter -> mlx-whisper). Repeatable baseline.
   --live  a person reads each sentence into the microphone.
+  --engine elevenlabs   final text from ElevenLabs Scribe (as with ASR_ENGINE=elevenlabs; needs ELEVENLABS_API_KEY
+          in .env and sends the audio to ElevenLabs). Default: whisper, on this Mac.
 
 Latency reported = compute time from the end-of-speech decision to the final caption; the
 end-of-speech decision itself waits 600 ms of silence, so add that for speaker-perceived delay.
 """
 import argparse
 import json
+import os
 import re
 import statistics
 import subprocess
@@ -23,7 +26,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from medbridge.asr import SpeechPipeline, Transcriber  # noqa: E402
+from medbridge.asr import ElevenLabsTranscriber, SpeechPipeline, Transcriber  # noqa: E402
 
 VOICES = ["Samantha", "Daniel", "Karen", "Aman"]
 TERMS = ["chest pain", "penicillin", "aspirin", "blood thinners", "nausea", "vomiting", "unconscious", "consciousness",
@@ -68,11 +71,19 @@ def live_utterance(pipe, finals, lat, timeout=15):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--live", action="store_true")
+    ap.add_argument("--engine", choices=["whisper", "elevenlabs"], default="whisper")
     args = ap.parse_args()
 
     sentences = json.loads((ROOT / "data/er_phrases.json").read_text())["doctor"]
     finals, lat = [], []
-    pipe = SpeechPipeline(Transcriber(), lambda kind, utt, text: kind == "final" and finals.append(text))
+    cloud = None
+    if args.engine == "elevenlabs":
+        from dotenv import load_dotenv
+
+        load_dotenv(ROOT / ".env")
+        cloud = ElevenLabsTranscriber(os.environ["ELEVENLABS_API_KEY"].strip())
+    pipe = SpeechPipeline(Transcriber(), lambda kind, utt, text: kind == "final" and finals.append(text),
+                          final_transcriber=cloud)
     refs, hyps = [], []
     runs = [(s, None) for s in sentences] if args.live else [(s, v) for v in VOICES for s in sentences]
     for sentence, voice in runs:
@@ -89,7 +100,7 @@ def main():
     wer = jiwer.wer(refs, hyps)
     present = [(t, r, h) for r, h in zip(refs, hyps) for t in TERMS if f" {t} " in f" {r} "]
     recall = sum(f" {t} " in f" {h} " for t, _, h in present) / max(1, len(present))
-    print(f"\n== {len(refs)} utterances  WER {wer * 100:.1f}%  medical-term recall {recall * 100:.0f}% ({len(present)} terms)")
+    print(f"\n== {args.engine}: {len(refs)} utterances  WER {wer * 100:.1f}%  medical-term recall {recall * 100:.0f}% ({len(present)} terms)")
     if lat:
         print(f"   final-caption compute latency ms: p50 {statistics.median(lat):.0f}  p95 {np.percentile(lat, 95):.0f}"
               f"  (+600 ms end-of-speech wait)")

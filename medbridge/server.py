@@ -149,7 +149,7 @@ def start_engines(app, hub):
     import sounddevice as sd
     # import torch  # only chose the device for the natural-signing model
 
-    from medbridge.asr import MicAsr, SpeechPipeline, Transcriber
+    from medbridge.asr import ElevenLabsTranscriber, MicAsr, SpeechPipeline, Transcriber
     from medbridge.islr import load_gloss_list, load_stgcn
     # Natural signing (Uni-Sign) is disabled for now. To re-enable, restore the commented lines in this function and in
     # create_app below, and the natural-signing parts of web/src/components/PatientView.tsx.
@@ -181,7 +181,16 @@ def start_engines(app, hub):
     if mic_name:
         device = next((i for i, d in enumerate(sd.query_devices())
                        if d["max_input_channels"] > 0 and mic_name.lower() in d["name"].lower()), None)
-    pipeline = SpeechPipeline(Transcriber(), hub.on_caption)
+    cloud = None  # ASR_ENGINE=elevenlabs: final captions from ElevenLabs Scribe; Whisper stays for live text and as fallback
+    if _env("ASR_ENGINE", "whisper").lower() == "elevenlabs":
+        key = _env("ELEVENLABS_API_KEY", "").strip()
+        if key:
+            cloud = ElevenLabsTranscriber(key, model=_env("ELEVENLABS_STT_MODEL", "scribe_v2"))
+        else:
+            log.warning("ASR_ENGINE=elevenlabs but ELEVENLABS_API_KEY is empty: using Whisper")
+    log.info("speech-to-text: %s", "ElevenLabs Scribe for final captions (Whisper for live text and as fallback)" if cloud
+             else "Whisper, on this Mac")
+    pipeline = SpeechPipeline(Transcriber(), hub.on_caption, final_transcriber=cloud)
     last = [0.0]
 
     def on_level(rms):
