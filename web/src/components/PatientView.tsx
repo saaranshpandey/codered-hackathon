@@ -5,7 +5,7 @@ import type { SignedWord, State } from '../lib/types'
 import { useMedbridge } from '../lib/useMedbridge'
 import { CameraPanel } from './CameraPanel'
 import { SigningStage } from './SigningStage'
-import { Disclaimer, Icon, StatusPill, Waveform, Wordmark, sourceLabel } from './ui'
+import { Disclaimer, Icon, StatusPill, Waveform, Wordmark } from './ui'
 
 type Send = (msg: Record<string, unknown>) => void
 
@@ -78,12 +78,9 @@ function Captions({ state, signed }: { state: State; signed: SignedWord | null }
   }, [captions, state.interim]) // every snapshot: a correction to an older caption can change the height too
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="eyebrow flex items-center gap-3 text-bone/45">
-        <span className="h-px w-8 bg-bone/30" /> The doctor said
-      </div>
       <motion.div ref={scroller} layoutScroll
         onScroll={(e) => { const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48 }}
-        className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pr-2 [scrollbar-color:rgb(242_238_230/0.25)_transparent] [scrollbar-width:thin]">
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pr-2 [scrollbar-color:rgb(242_238_230/0.25)_transparent] [scrollbar-width:thin]">
         <div className="mt-auto flex flex-col gap-6">
           {captions.length === 0 && !state.interim && (
             <p className="font-serif text-5xl italic leading-tight text-bone/30">The doctor's words will appear here as they speak.</p>
@@ -331,12 +328,6 @@ function Composer({ state, send }: { state: State; send: Send }) {
 
   return (
     <div className="sticky bottom-0 z-10 mt-auto rounded-3xl border border-ink-line bg-ink-raised p-5 shadow-[0_-24px_40px_-12px_rgb(14_15_12)]">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="eyebrow text-bone/45">Your message to the doctor</span>
-        {(draft.text || draft.edited) && (
-          <span className="eyebrow text-bone/40">{sourceLabel[draft.source] ?? draft.source}{draft.edited ? ' · edited' : ''}</span>
-        )}
-      </div>
       {editing ? (
         <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} rows={2}
           className="w-full resize-none rounded-xl bg-ink px-3 py-2 text-[24px] leading-snug outline-none ring-1 ring-bone/20 focus:ring-mint" />
