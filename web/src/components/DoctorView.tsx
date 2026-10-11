@@ -24,18 +24,24 @@ export function DoctorView() {
               {state.asr.state === 'paused' ? 'Resume captions' : 'Pause captions'}
             </button>
           )}
+          {state && (
+            <button onClick={() => { if (confirm('End the session and clear the conversation from memory?')) send({ type: 'session.end' }) }}
+              className="flex items-center gap-2 rounded-full border border-graphite/20 px-4 py-2 text-sm font-bold hover:bg-graphite/5">
+              <Icon name="stop" size={14} /> End session
+            </button>
+          )}
           {!connected && <StatusPill tone="warn" label="Reconnecting" pulse />}
         </div>
       </header>
       {state ? (
-        <main className="grid min-h-0 flex-1 grid-cols-1 gap-5 px-5 py-5 lg:grid-cols-12 lg:gap-8 lg:px-10 lg:py-7">
-          <section className="order-2 flex min-h-[55vh] flex-col lg:order-none lg:col-span-8 lg:min-h-0">
+        <main className="flex min-h-0 flex-1 flex-col px-5 py-5 lg:px-10 lg:py-7">
+          <section className="flex min-h-[55vh] flex-1 flex-col lg:min-h-0">
             <Timeline state={state} send={send} />
           </section>
-          {/* Narrow windows: conversation, then End session (aside dissolves into the grid). */}
+          {/* The side column (System readouts) is disabled for now; the conversation takes the full width.
           <aside className="contents lg:col-span-4 lg:flex lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-y-auto">
-            <div className="order-3 lg:order-none"><Readouts /* state={state} fps={fps} */ send={send} /></div>
-          </aside>
+            <div className="order-3 lg:order-none"><Readouts state={state} fps={fps} send={send} /></div>
+          </aside> */}
         </main>
       ) : (
         <div className="grid flex-1 place-items-center font-serif text-3xl italic text-graphite/50">Connecting…</div>
@@ -144,32 +150,28 @@ function PatientLine({ msg }: { msg: Message }) {
   )
 }
 
-// The System readouts (camera fps, latencies, reply count) are disabled for now; only End session is left.
-// To re-enable, restore the commented lines here and the state/fps props where Readouts is used.
+// The System readouts (camera fps, latencies, reply count) are disabled for now, and End session moved to the header.
+// To re-enable, restore this component, the side column in DoctorView (in a 12-column grid, conversation spanning 8)
+// and `fps` from useMedbridge.
 // function Readouts({ state, fps, send }: { state: State; fps: number | null; send: Send }) {
-function Readouts({ send }: { send: Send }) {
-  // const lastPrecise = state.precise[state.precise.length - 1]
-  // const rows: [string, string][] = [
-  //   ['Camera', fps === null ? '—' : `${fps.toFixed(0)} fps`],
-  //   ['Sentence translation', state.natural?.latency_ms != null ? `${state.natural.latency_ms} ms` : '—'],
-  //   ['Sign recognition', lastPrecise?.latency_ms != null ? `${lastPrecise.latency_ms} ms` : '—'],
-  //   ['Confirmed replies', String(state.messages.length)],
-  // ]
-  return (
-    <div className="rounded-[28px] border border-paper-line bg-paper-raised p-6">
-      {/* <span className="eyebrow text-graphite/50">System</span>
-      <dl className="mt-3 divide-y divide-paper-line">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex justify-between py-2.5">
-            <dt className="text-[15px] text-graphite/60">{k}</dt>
-            <dd className="font-mono text-[14px]">{v}</dd>
-          </div>
-        ))}
-      </dl> */}
-      <button onClick={() => { if (confirm('End the session and clear the conversation from memory?')) send({ type: 'session.end' }) }}
-        className="flex w-full items-center justify-center gap-2 rounded-full border border-graphite/20 py-2.5 text-sm font-bold hover:bg-graphite/5">
-        <Icon name="stop" size={14} /> End session
-      </button>
-    </div>
-  )
-}
+//   const lastPrecise = state.precise[state.precise.length - 1]
+//   const rows: [string, string][] = [
+//     ['Camera', fps === null ? '—' : `${fps.toFixed(0)} fps`],
+//     ['Sentence translation', state.natural?.latency_ms != null ? `${state.natural.latency_ms} ms` : '—'],
+//     ['Sign recognition', lastPrecise?.latency_ms != null ? `${lastPrecise.latency_ms} ms` : '—'],
+//     ['Confirmed replies', String(state.messages.length)],
+//   ]
+//   return (
+//     <div className="rounded-[28px] border border-paper-line bg-paper-raised p-6">
+//       <span className="eyebrow text-graphite/50">System</span>
+//       <dl className="mt-3 divide-y divide-paper-line">
+//         {rows.map(([k, v]) => (
+//           <div key={k} className="flex justify-between py-2.5">
+//             <dt className="text-[15px] text-graphite/60">{k}</dt>
+//             <dd className="font-mono text-[14px]">{v}</dd>
+//           </div>
+//         ))}
+//       </dl>
+//     </div>
+//   )
+// }
