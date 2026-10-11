@@ -83,6 +83,8 @@ export function createCougar(scene: THREE.Scene) {
   }
 
   const root = new THREE.Group()
+  root.visible = false // until update() has posed it: the parts start piled at the origin at unit size
+  let shown = true, posed = false
   scene.add(root)
 
   // ---- limbs: cylinders between two points, spheres at joints ------------------------------------
@@ -196,8 +198,9 @@ export function createCougar(scene: THREE.Scene) {
     // Signing happens in front of the body; keep paws clear of the jersey even when depth is flat (sign.mt).
     for (const i of [LW, RW]) if (ok[i]) P[i].z = Math.max(P[i].z, 0) + 0.12
     for (let i = LH; i < LH + 42; i++) if (ok[i]) P[i].z = Math.max(P[i].z, 0) + 0.16
-    root.visible = ok[LS] && ok[RS]
-    if (!root.visible) return
+    posed = ok[LS] && ok[RS]
+    root.visible = shown && posed
+    if (!posed) return
     const shoulderMid = tmp2.copy(P[LS]).add(P[RS]).multiplyScalar(0.5).clone()
     const width = P[LS].distanceTo(P[RS])
     const hipMid = ok[LHIP] && ok[RHIP] ? P[LHIP].clone().add(P[RHIP]).multiplyScalar(0.5) : shoulderMid.clone().add(new THREE.Vector3(0, -1.5, 0))
@@ -274,5 +277,10 @@ export function createCougar(scene: THREE.Scene) {
     }
   }
 
-  return { update, setVisible: (v: boolean) => { root.visible = v } }
+  return {
+    update,
+    /** Hides the mascot, or shows it if the last update() found a body to pose. */
+    setVisible: (v: boolean) => { shown = v; root.visible = v && posed },
+    get visible() { return root.visible },
+  }
 }
